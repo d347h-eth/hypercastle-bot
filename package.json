@@ -1,0 +1,30 @@
+{
+  "name": "terraforms-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.9.4",
+  "engines": {
+    "node": "24.3.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check"
+  },
+  "dependencies": {
+    "better-sqlite3": "^v12.2.0",
+    "dotenv": "^16.4.5",
+    "twitter-api-v2": "^1.17.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "24.3.3",
+    "prettier": "3.3.3",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2"
+  }
+}
+
