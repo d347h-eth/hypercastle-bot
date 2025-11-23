@@ -57,8 +57,14 @@ describe("SqliteSaleRepository", () => {
 
         repo.markPosted("s1", "tw1", "tweet", now + 10);
         const row = db.raw
-            .prepare("SELECT status, tweet_id, posted_at FROM sales WHERE sale_id=?")
-            .get("s1") as { status: string; tweet_id: string; posted_at: number };
+            .prepare(
+                "SELECT status, tweet_id, posted_at FROM sales WHERE sale_id=?",
+            )
+            .get("s1") as {
+            status: string;
+            tweet_id: string;
+            posted_at: number;
+        };
         expect(row.status).toBe("posted");
         expect(row.tweet_id).toBe("tw1");
         expect(row.posted_at).toBe(now + 10);
@@ -73,7 +79,11 @@ describe("SqliteSaleRepository", () => {
             .prepare(
                 "SELECT status, next_attempt_at, attempt_count FROM sales WHERE sale_id=?",
             )
-            .get("s2") as { status: string; next_attempt_at: number; attempt_count: number };
+            .get("s2") as {
+            status: string;
+            next_attempt_at: number;
+            attempt_count: number;
+        };
         expect(row.status).toBe("queued");
         expect(row.next_attempt_at).toBe(now + 60);
         expect(row.attempt_count).toBe(1);
@@ -98,15 +108,16 @@ describe("SqliteSaleRepository", () => {
 
         const cutoff = now - 30 * 24 * 3600;
         repo.pruneOld(cutoff, now, 1); // run prune
-        const countAfterFirst = db.raw.prepare("SELECT COUNT(*) as c FROM sales").get()
-            .c as number;
+        const countAfterFirst = db.raw
+            .prepare("SELECT COUNT(*) as c FROM sales")
+            .get().c as number;
         expect(countAfterFirst).toBe(1);
 
         // Second prune within interval should no-op
         repo.pruneOld(cutoff, now + 10, 10_000);
-        const countAfterSecond = db.raw.prepare("SELECT COUNT(*) as c FROM sales").get()
-            .c as number;
+        const countAfterSecond = db.raw
+            .prepare("SELECT COUNT(*) as c FROM sales")
+            .get().c as number;
         expect(countAfterSecond).toBe(1);
     });
 });
-

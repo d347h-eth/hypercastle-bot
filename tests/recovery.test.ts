@@ -2,7 +2,10 @@ import { describe, it, expect } from "vitest";
 import { BotService } from "../src/application/botService.js";
 import { Sale } from "../src/domain/models.js";
 import { SalesFeedPort } from "../src/domain/ports/salesFeed.js";
-import { SaleRepository, QueuedSale } from "../src/domain/ports/saleRepository.js";
+import {
+    SaleRepository,
+    QueuedSale,
+} from "../src/domain/ports/saleRepository.js";
 import { RateLimiter, RateUsage } from "../src/domain/ports/rateLimiter.js";
 import { SocialPublisher } from "../src/domain/ports/socialPublisher.js";
 
@@ -102,7 +105,11 @@ describe("BotService recovery", () => {
         const publisher = new RecoveryPublisher([
             { id: "t1", text: "#123 - Test - 0.25 ETH (take-bid)" },
         ]);
-        const rateLimiter = new RecoveryRateLimiter({ window: "w", used: 0, limit: 10 });
+        const rateLimiter = new RecoveryRateLimiter({
+            window: "w",
+            used: 0,
+            limit: 10,
+        });
 
         const bot = new BotService({
             feed: new NoopFeed(),
@@ -122,7 +129,11 @@ describe("BotService recovery", () => {
         const sale = saleFixture();
         const repo = new RecoveryRepo([{ sale, attemptCount: 0 }]);
         const publisher = new RecoveryPublisher([]);
-        const rateLimiter = new RecoveryRateLimiter({ window: "w", used: 0, limit: 10 });
+        const rateLimiter = new RecoveryRateLimiter({
+            window: "w",
+            used: 0,
+            limit: 10,
+        });
 
         const bot = new BotService({
             feed: new NoopFeed(),
@@ -139,4 +150,3 @@ describe("BotService recovery", () => {
         expect(rateLimiter.getUsage().used).toBe(0);
     });
 });
-
