@@ -1,21 +1,39 @@
 export interface RawSale {
-    // Adjust these according to your feed
-    id?: string; // if absent, we'll hash payload
-    createdAt?: string | number; // timestamp
-    title?: string;
-    price?: number | string;
-    currency?: string;
-    url?: string;
+    saleId: string;
+    timestamp: number; // unix seconds
+    price: {
+        currency: {
+            contract: string;
+            name?: string;
+            symbol?: string;
+            decimals?: number;
+        };
+        amount: {
+            raw: string;
+            decimal: number;
+            usd?: number | null;
+            native?: number;
+        };
+    };
+    orderSide: "ask" | "bid" | string;
+    washTradingScore?: number;
+    token: {
+        contract: string;
+        tokenId: string; // numeric as string
+        name?: string | null;
+        image?: string | null;
+        collection?: { id: string; name?: string | null } | null;
+    };
     [k: string]: unknown;
 }
 
 export interface SaleRecord {
     saleId: string;
     createdAt: number; // unix seconds
-    title?: string;
-    price?: string;
-    currency?: string;
-    url?: string;
+    tokenId: string;
+    name?: string;
+    price: number; // decimal units of currency
+    symbol: string;
+    orderSide: string;
     payload: RawSale;
 }
-

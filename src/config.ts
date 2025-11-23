@@ -12,8 +12,9 @@ function num(name: string, def: number): number {
 export type AuthMode = "oauth1";
 
 export interface Config {
-    salesApiUrl: string;
+    salesApiBaseUrl: string;
     salesApiKey: string;
+    salesCollectionAddress: string;
     pollIntervalMs: number;
 
     dbPath: string;
@@ -35,8 +36,12 @@ export interface Config {
 }
 
 export const config: Config = {
-    salesApiUrl: process.env.SALES_API_URL || "",
+    salesApiBaseUrl:
+        process.env.SALES_API_BASE_URL ||
+        process.env.SALES_API_URL ||
+        "",
     salesApiKey: process.env.SALES_API_KEY || "",
+    salesCollectionAddress: process.env.SALES_COLLECTION_ADDRESS || "",
     pollIntervalMs: num("POLL_INTERVAL_MS", 30_000),
 
     dbPath: process.env.DB_PATH || "./data/bot.sqlite.db",
@@ -56,13 +61,14 @@ export const config: Config = {
 
     tweetTemplate:
         process.env.TWEET_TEMPLATE ||
-        "New sale: {title} sold for {price} {currency} (sale:{saleId})",
+        "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})",
 };
 
 export function validateConfig(): void {
     const missing: string[] = [];
-    if (!config.salesApiUrl) missing.push("SALES_API_URL");
+    if (!config.salesApiBaseUrl) missing.push("SALES_API_BASE_URL");
     if (!config.salesApiKey) missing.push("SALES_API_KEY");
+    if (!config.salesCollectionAddress) missing.push("SALES_COLLECTION_ADDRESS");
     if (!config.x.appKey) missing.push("X_APP_KEY");
     if (!config.x.appSecret) missing.push("X_APP_SECRET");
     if (!config.x.accessToken) missing.push("X_ACCESS_TOKEN");
@@ -71,4 +77,3 @@ export function validateConfig(): void {
         throw new Error(`Missing required env: ${missing.join(",")}`);
     }
 }
-

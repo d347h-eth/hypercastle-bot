@@ -51,6 +51,25 @@ export function getRateUsage(): { window: string; used: number; limit: number } 
     return { window, used, limit: config.rateMaxPerDay };
 }
 
+export function setUsageToLimit(): void {
+    const { window, limit } = getRateUsage();
+    db.exec("BEGIN");
+    try {
+        db.prepare("REPLACE INTO meta(key,value) VALUES(?,?)").run(
+            "rate_used",
+            String(limit),
+        );
+        db.prepare("REPLACE INTO meta(key,value) VALUES(?,?)").run(
+            "rate_window_day",
+            window,
+        );
+        db.exec("COMMIT");
+    } catch {
+        db.exec("ROLLBACK");
+        throw new Error("Failed to set usage to limit");
+    }
+}
+
 export function incrementUsage(): void {
     const { window } = getRateUsage();
     db.exec("BEGIN");
@@ -73,4 +92,3 @@ export function incrementUsage(): void {
         throw new Error("Failed to increment rate usage");
     }
 }
-

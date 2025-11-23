@@ -30,6 +30,11 @@ The bot will create `/data/bot.sqlite.db` and start polling.
 
 Environment variables are documented in `.env.example`.
 
+Important:
+- Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
+- `TWEET_TEMPLATE` defaults to "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})".
+- On X 429, posting halts until the next daily reset (no retries until then).
+
 Notes:
 - OAuth 1.0a user tokens (X_APP_KEY/SECRET + X_ACCESS_TOKEN/SECRET) are the simplest for posting.
 - `RATE_LIMIT_MAX_PER_DAY` is enforced locally; set to your X free-tier daily allowance.
@@ -52,5 +57,4 @@ yarn dev
 ## Notes
 
 - The sales feed adapter in `src/services/salesFeed.ts` is intentionally simple. Update the mapping to match your feed (unique sale ID, timestamps, fields for templating).
-- By default, the tweet text includes the sale ID marker (e.g., `sale:abc123`) to support idempotency checks during crash recovery.
-
+- Recovery matches by `tokenId + price + symbol + take-{orderSide}`.

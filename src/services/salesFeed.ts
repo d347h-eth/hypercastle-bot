@@ -1,6 +1,5 @@
 import { config } from "../config.js";
 import { SaleRecord, RawSale } from "../types.js";
-import { stableIdFor } from "../util/hash.js";
 
 // Very small fetch wrapper without external deps
 async function getJson(url: string, headers: Record<string, string>) {
@@ -12,52 +11,43 @@ async function getJson(url: string, headers: Record<string, string>) {
     return res.json();
 }
 
-function parseTimestamp(v: unknown): number {
-    if (typeof v === "number") return Math.floor(v);
-    if (typeof v === "string") {
-        const n = Number(v);
-        if (Number.isFinite(n)) return Math.floor(n);
-        const d = Date.parse(v);
-        if (Number.isFinite(d)) return Math.floor(d / 1000);
-    }
-    return Math.floor(Date.now() / 1000);
-}
-
 export interface SalesFeedResult {
     records: SaleRecord[];
 }
 
 export async function fetchSalesFeed(): Promise<SalesFeedResult> {
-    const url = config.salesApiUrl;
+    const base = config.salesApiBaseUrl.replace(/\/?$/, "");
+    const params = new URLSearchParams({
+        collection: config.salesCollectionAddress,
+        sortBy: "time",
+        sortDirection: "desc",
+        offset: "0",
+        limit: "100",
+    });
+    const url = `${base}/sales/v6?${params.toString()}`;
     const json = await getJson(url, { "x-api-key": config.salesApiKey });
 
-    // Expecting an array of sales; adjust mapping to your feed shape
-    const arr: RawSale[] = Array.isArray(json)
-        ? json
-        : Array.isArray(json?.items)
-        ? (json.items as RawSale[])
-        : [];
+    const arr: RawSale[] = Array.isArray(json?.sales) ? (json.sales as RawSale[]) : [];
 
-    const records: SaleRecord[] = arr.map((raw) => {
-        const saleId = raw.id || stableIdFor(raw);
-        const createdAt = parseTimestamp(raw.createdAt ?? Date.now());
-        const price =
-            raw.price === undefined
-                ? undefined
-                : typeof raw.price === "number"
-                ? String(raw.price)
-                : String(raw.price);
-        return {
-            saleId,
-            createdAt,
-            title: String(raw.title ?? "Sale"),
-            price,
-            currency: raw.currency ? String(raw.currency) : undefined,
-            url: raw.url ? String(raw.url) : undefined,
-            payload: raw,
-        };
-    });
+    const records: SaleRecord[] = arr
+        .filter((raw) => (raw.washTradingScore ?? 0) === 0)
+        .map((raw) => {
+            const saleId = String(raw.saleId);
+            const createdAt = Math.floor(Number(raw.timestamp) || 0);
+            const amount = Number(raw.price?.amount?.decimal ?? 0);
+            const symbol = raw.price?.currency?.symbol || "";
+            const orderSide = String(raw.orderSide || "").toLowerCase() || "ask";
+            return {
+                saleId,
+                createdAt,
+                tokenId: String(raw.token?.tokenId ?? ""),
+                name: raw.token?.name ?? undefined,
+                price: amount,
+                symbol,
+                orderSide,
+                payload: raw,
+            };
+        });
 
     return { records };
 }
-
