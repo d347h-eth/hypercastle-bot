@@ -25,4 +25,3 @@ export const logger = {
     error: (msg: string, meta?: Record<string, unknown>) =>
         log("error", msg, meta),
 };
-

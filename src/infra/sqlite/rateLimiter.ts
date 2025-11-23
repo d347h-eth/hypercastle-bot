@@ -32,12 +32,12 @@ export class SqliteRateLimiter implements RateLimiter {
                 .prepare("SELECT value FROM meta WHERE key='rate_used'")
                 .get() as { value?: string } | undefined;
             const used = cur ? Number(cur.value) || 0 : 0;
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_used',?)").run(
-                String(used + 1),
-            );
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_window_day',?)").run(
-                window,
-            );
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_used',?)",
+            ).run(String(used + 1));
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_window_day',?)",
+            ).run(window);
             db.exec("COMMIT");
         } catch {
             db.exec("ROLLBACK");
@@ -49,12 +49,12 @@ export class SqliteRateLimiter implements RateLimiter {
         const { window } = this.getUsage();
         db.exec("BEGIN");
         try {
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_used',?)").run(
-                String(this.dailyLimit),
-            );
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_window_day',?)").run(
-                window,
-            );
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_used',?)",
+            ).run(String(this.dailyLimit));
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_window_day',?)",
+            ).run(window);
             db.exec("COMMIT");
         } catch {
             db.exec("ROLLBACK");
@@ -65,10 +65,12 @@ export class SqliteRateLimiter implements RateLimiter {
     private resetWindow(window: string): void {
         db.exec("BEGIN");
         try {
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_window_day',?)").run(
-                window,
-            );
-            db.prepare("REPLACE INTO meta(key,value) VALUES('rate_used','0')").run();
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_window_day',?)",
+            ).run(window);
+            db.prepare(
+                "REPLACE INTO meta(key,value) VALUES('rate_used','0')",
+            ).run();
             db.exec("COMMIT");
         } catch {
             db.exec("ROLLBACK");
@@ -90,4 +92,3 @@ export class SqliteRateLimiter implements RateLimiter {
         return `${y}-${m}-${d}@H${this.resetHourUtc}`;
     }
 }
-

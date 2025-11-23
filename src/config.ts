@@ -37,9 +37,7 @@ export interface Config {
 
 export const config: Config = {
     salesApiBaseUrl:
-        process.env.SALES_API_BASE_URL ||
-        process.env.SALES_API_URL ||
-        "",
+        process.env.SALES_API_BASE_URL || process.env.SALES_API_URL || "",
     salesApiKey: process.env.SALES_API_KEY || "",
     salesCollectionAddress: process.env.SALES_COLLECTION_ADDRESS || "",
     pollIntervalMs: num("POLL_INTERVAL_MS", 30_000),
@@ -68,7 +66,8 @@ export function validateConfig(): void {
     const missing: string[] = [];
     if (!config.salesApiBaseUrl) missing.push("SALES_API_BASE_URL");
     if (!config.salesApiKey) missing.push("SALES_API_KEY");
-    if (!config.salesCollectionAddress) missing.push("SALES_COLLECTION_ADDRESS");
+    if (!config.salesCollectionAddress)
+        missing.push("SALES_COLLECTION_ADDRESS");
     if (!config.x.appKey) missing.push("X_APP_KEY");
     if (!config.x.appSecret) missing.push("X_APP_SECRET");
     if (!config.x.accessToken) missing.push("X_ACCESS_TOKEN");

@@ -3,17 +3,18 @@
 Small resilient bot that polls a private sales feed API and posts new sales to X (Twitter). It persists state in SQLite to ensure crash recovery and rate-limit aware posting.
 
 Highlights:
-- TypeScript + Node.js (ESM, Yarn 4 PnP)
-- SQLite via better-sqlite3 with simple SQL migrations
-- Daily rate-limit window with queue buffering
-- First-run bootstrap: ingests current feed without posting
-- Optional timeline verification (1 req / 15min) for crash recovery
+
+-   TypeScript + Node.js (ESM, Yarn 4 PnP)
+-   SQLite via better-sqlite3 with simple SQL migrations
+-   Daily rate-limit window with queue buffering
+-   First-run bootstrap: ingests current feed without posting
+-   Optional timeline verification (1 req / 15min) for crash recovery
 
 ## Quick Start
 
-1) Copy `.env.example` to `.env` and fill values.
+1. Copy `.env.example` to `.env` and fill values.
 
-2) Build + run with Docker:
+2. Build + run with Docker:
 
 ```sh
 docker build -t terraforms-bot .
@@ -31,16 +32,18 @@ The bot will create `/data/bot.sqlite.db` and start polling.
 Environment variables are documented in `.env.example`.
 
 Important:
-- Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
-- `TWEET_TEMPLATE` defaults to "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})".
-- On X 429, posting halts until the next daily reset (no retries until then).
-- The app is currently wired to the in-memory `FakeSocialPublisher` for easy QA; swap to `TwitterPublisher` in `src/index.ts` for production.
+
+-   Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
+-   `TWEET_TEMPLATE` defaults to "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})".
+-   On X 429, posting halts until the next daily reset (no retries until then).
+-   The app is currently wired to the in-memory `FakeSocialPublisher` for easy QA; swap to `TwitterPublisher` in `src/index.ts` for production.
 
 Notes:
-- OAuth 1.0a user tokens (X_APP_KEY/SECRET + X_ACCESS_TOKEN/SECRET) are the simplest for posting.
-- `RATE_LIMIT_MAX_PER_DAY` is enforced locally; set to your X free-tier daily allowance.
-- `RATE_LIMIT_RESET_HOUR_UTC` controls when the daily window resets (default 00:00 UTC).
-- For timeline verification, provide either `X_USER_ID` or `X_USERNAME`.
+
+-   OAuth 1.0a user tokens (X_APP_KEY/SECRET + X_ACCESS_TOKEN/SECRET) are the simplest for posting.
+-   `RATE_LIMIT_MAX_PER_DAY` is enforced locally; set to your X free-tier daily allowance.
+-   `RATE_LIMIT_RESET_HOUR_UTC` controls when the daily window resets (default 00:00 UTC).
+-   For timeline verification, provide either `X_USER_ID` or `X_USERNAME`.
 
 ## Development
 
@@ -51,17 +54,17 @@ yarn dev
 
 ## Project Layout
 
-- `src/` — application code
-- `migrations/` — SQLite schema migrations (auto-run on startup)
-- `data/` — local SQLite DB (gitignored; mounted as volume in Docker)
+-   `src/` — application code
+-   `migrations/` — SQLite schema migrations (auto-run on startup)
+-   `data/` — local SQLite DB (gitignored; mounted as volume in Docker)
 
 ### Architecture
 
-- Application: `src/application/*` orchestrates polling/posting.
-- Domain: `src/domain/*` holds core types and ports (interfaces).
-- Infra (adapters): HTTP feed (`src/infra/http/*`), SQLite repo + rate limiter (`src/infra/sqlite/*`), Twitter (`src/infra/twitter/*`).
+-   Application: `src/application/*` orchestrates polling/posting.
+-   Domain: `src/domain/*` holds core types and ports (interfaces).
+-   Infra (adapters): HTTP feed (`src/infra/http/*`), SQLite repo + rate limiter (`src/infra/sqlite/*`), Twitter (`src/infra/twitter/*`).
 
 ## Notes
 
-- The sales feed adapter in `src/infra/http/reservoirSalesFeed.ts` is intentionally simple. Update the mapping to match your feed if it changes.
-- Recovery matches by `tokenId + price + symbol + take-{orderSide}`.
+-   The sales feed adapter in `src/infra/http/reservoirSalesFeed.ts` is intentionally simple. Update the mapping to match your feed if it changes.
+-   Recovery matches by `tokenId + price + symbol + take-{orderSide}`.

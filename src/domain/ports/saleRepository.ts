@@ -14,7 +14,12 @@ export interface SaleRepository {
     enqueueNew(sales: Sale[], seenAt: number): number;
 
     claimNextReady(now: number): QueuedSale | null;
-    markPosted(saleId: string, tweetId: string | null, tweetText: string, postedAt: number): void;
+    markPosted(
+        saleId: string,
+        tweetId: string | null,
+        tweetText: string,
+        postedAt: number,
+    ): void;
     requeueAfterRateLimit(saleId: string): void;
     scheduleRetry(saleId: string, nextAttemptAt: number): void;
 
@@ -23,4 +28,3 @@ export interface SaleRepository {
 
     pruneOld(cutoff: number, now: number, minInterval: number): void;
 }
-

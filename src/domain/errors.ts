@@ -4,4 +4,3 @@ export class RateLimitExceededError extends Error {
         this.name = "RateLimitExceededError";
     }
 }
-

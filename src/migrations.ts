@@ -17,7 +17,7 @@ export class MigrationRunner {
 
     private async ensureMigrationsTable() {
         db.exec(
-            "CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, executed_at TEXT DEFAULT CURRENT_TIMESTAMP)"
+            "CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY, executed_at TEXT DEFAULT CURRENT_TIMESTAMP)",
         );
     }
 
@@ -36,7 +36,7 @@ export class MigrationRunner {
 
     private hasRun(name: string): boolean {
         const stmt = db.prepare<[string]>(
-            "SELECT 1 FROM migrations WHERE name = ? LIMIT 1"
+            "SELECT 1 FROM migrations WHERE name = ? LIMIT 1",
         );
         const row = stmt.get(name) as any;
         return !!row;
@@ -48,7 +48,7 @@ export class MigrationRunner {
         try {
             db.exec(sql);
             const insert = db.prepare<[string]>(
-                "INSERT INTO migrations (name) VALUES (?)"
+                "INSERT INTO migrations (name) VALUES (?)",
             );
             insert.run(name);
             db.exec("COMMIT");
@@ -64,4 +64,3 @@ export function createMigrationRunner(): MigrationRunner {
     const dir = path.resolve(process.cwd(), "migrations");
     return new MigrationRunner(dir);
 }
-

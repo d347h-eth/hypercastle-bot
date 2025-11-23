@@ -25,4 +25,3 @@ function normalizeSide(side: string): string {
     const val = side?.toLowerCase?.() || "ask";
     return val === "bid" || val === "ask" ? val : val || "ask";
 }
-

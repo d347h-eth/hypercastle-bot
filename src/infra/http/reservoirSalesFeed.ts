@@ -33,11 +33,18 @@ export class ReservoirSalesFeed implements SalesFeedPort {
             includeTokenMetadata: "true",
         });
         const url = `${base}/sales/v6?${params.toString()}`;
-        const json = await this.getJson(url, { "x-api-key": config.salesApiKey });
-        const arr: RawSale[] = Array.isArray(json?.sales) ? (json.sales as RawSale[]) : [];
+        const json = await this.getJson(url, {
+            "x-api-key": config.salesApiKey,
+        });
+        const arr: RawSale[] = Array.isArray(json?.sales)
+            ? (json.sales as RawSale[])
+            : [];
 
         return arr
-            .filter((raw) => (raw.washTradingScore ?? 0) === 0 && raw.isDeleted !== true)
+            .filter(
+                (raw) =>
+                    (raw.washTradingScore ?? 0) === 0 && raw.isDeleted !== true,
+            )
             .map((raw) => this.toSale(raw));
     }
 
@@ -66,4 +73,3 @@ export class ReservoirSalesFeed implements SalesFeedPort {
         };
     }
 }
-

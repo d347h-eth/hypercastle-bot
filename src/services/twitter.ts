@@ -53,9 +53,9 @@ export function isRateLimitedError(e: unknown): boolean {
     return /429/.test(msg);
 }
 
-export async function fetchRecentTweets(limit = 5): Promise<
-    { id: string; text: string }[]
-> {
+export async function fetchRecentTweets(
+    limit = 5,
+): Promise<{ id: string; text: string }[]> {
     const userId = await ensureUserId();
     if (!userId) return [];
     const client = getTwitterClient();
@@ -70,4 +70,3 @@ export async function fetchRecentTweets(limit = 5): Promise<
     }
     return out;
 }
-

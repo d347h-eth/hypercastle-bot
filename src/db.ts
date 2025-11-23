@@ -52,4 +52,3 @@ export const db = {
         return ensureConnection();
     },
 };
-

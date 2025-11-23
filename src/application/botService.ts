@@ -47,7 +47,10 @@ export class BotService {
 
         for (const item of stale) {
             const sale = item.sale;
-            const expected = formatTweet(this.deps.config.tweetTemplate, sale).trim();
+            const expected = formatTweet(
+                this.deps.config.tweetTemplate,
+                sale,
+            ).trim();
             const priceStr = `${formatPrice(sale.price.amount)} ${sale.price.symbol}`;
             const tokenTag = `#${sale.tokenId}`;
             const sideStr = `(take-${sale.orderSide})`;
@@ -62,9 +65,17 @@ export class BotService {
             });
 
             if (found) {
-                this.deps.repo.markPosted(sale.id, found.id, found.text, unix());
+                this.deps.repo.markPosted(
+                    sale.id,
+                    found.id,
+                    found.text,
+                    unix(),
+                );
                 this.deps.rateLimiter.increment();
-                logger.info("Recovered posted sale", { saleId: sale.id, tweetId: found.id });
+                logger.info("Recovered posted sale", {
+                    saleId: sale.id,
+                    tweetId: found.id,
+                });
             } else {
                 const next = unix() + 60;
                 this.deps.repo.requeueStale(sale.id, next);
@@ -100,7 +111,10 @@ export class BotService {
             const queued = this.deps.repo.claimNextReady(unix());
             if (!queued) break;
 
-            const tweetText = formatTweet(this.deps.config.tweetTemplate, queued.sale);
+            const tweetText = formatTweet(
+                this.deps.config.tweetTemplate,
+                queued.sale,
+            );
             try {
                 const tweet = await this.deps.publisher.post(tweetText);
                 this.deps.repo.markPosted(
@@ -111,7 +125,10 @@ export class BotService {
                 );
                 this.deps.rateLimiter.increment();
                 remaining -= 1;
-                logger.info("Posted sale", { saleId: queued.sale.id, tweetId: tweet.id });
+                logger.info("Posted sale", {
+                    saleId: queued.sale.id,
+                    tweetId: tweet.id,
+                });
             } catch (e) {
                 if (e instanceof RateLimitExceededError) {
                     this.deps.repo.requeueAfterRateLimit(queued.sale.id);

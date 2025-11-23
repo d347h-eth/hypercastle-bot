@@ -3,4 +3,3 @@ export function computeBackoffSeconds(attempts: number): number {
     const base = Math.pow(2, attempts) * 60;
     return Math.min(30 * 60, base || 60);
 }
-

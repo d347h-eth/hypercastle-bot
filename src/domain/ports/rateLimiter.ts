@@ -9,4 +9,3 @@ export interface RateLimiter {
     increment(): void;
     exhaustUntilReset(): void;
 }
-

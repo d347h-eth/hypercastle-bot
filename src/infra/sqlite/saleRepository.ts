@@ -52,19 +52,16 @@ export class SqliteSaleRepository implements SaleRepository {
     }
 
     markInitialized(): void {
-        db.prepare("REPLACE INTO meta(key,value) VALUES('initialized','1')").run();
+        db.prepare(
+            "REPLACE INTO meta(key,value) VALUES('initialized','1')",
+        ).run();
     }
 
     seedSeen(sales: Sale[], seenAt: number): void {
         if (!sales.length) return;
-        const insert = db.prepare<[
-            string,
-            number,
-            number,
-            string,
-        ]>(
+        const insert = db.prepare<[string, number, number, string]>(
             `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, status, payload)
-             VALUES (?,?,?,?,?)`
+             VALUES (?,?,?,?,?)`,
         );
         db.exec("BEGIN");
         try {
@@ -86,17 +83,11 @@ export class SqliteSaleRepository implements SaleRepository {
 
     enqueueNew(sales: Sale[], seenAt: number): number {
         if (!sales.length) return 0;
-        const insert = db.prepare<[
-            string,
-            number,
-            number,
-            number,
-            number,
-            string,
-            string,
-        ]>(
+        const insert = db.prepare<
+            [string, number, number, number, number, string, string]
+        >(
             `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, enqueued_at, next_attempt_at, status, payload)
-             VALUES (?,?,?,?,?,?,?)`
+             VALUES (?,?,?,?,?,?,?)`,
         );
         let inserted = 0;
         db.exec("BEGIN");
@@ -128,16 +119,21 @@ export class SqliteSaleRepository implements SaleRepository {
                  FROM sales
                  WHERE status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                  ORDER BY created_at ASC
-                 LIMIT 1`
+                 LIMIT 1`,
             )
             .get(now) as
-            | { sale_id: string; payload: string; attempt_count?: number; tweet_text?: string }
+            | {
+                  sale_id: string;
+                  payload: string;
+                  attempt_count?: number;
+                  tweet_text?: string;
+              }
             | undefined;
         if (!row) return null;
 
         const updated = db
             .prepare(
-                `UPDATE sales SET status='posting', posting_at=? WHERE sale_id=? AND status='queued'`
+                `UPDATE sales SET status='posting', posting_at=? WHERE sale_id=? AND status='queued'`,
             )
             .run(now, row.sale_id);
         if (updated.changes === 0) return null;
@@ -150,33 +146,43 @@ export class SqliteSaleRepository implements SaleRepository {
         };
     }
 
-    markPosted(saleId: string, tweetId: string | null, tweetText: string, postedAt: number): void {
+    markPosted(
+        saleId: string,
+        tweetId: string | null,
+        tweetText: string,
+        postedAt: number,
+    ): void {
         db.prepare(
             `UPDATE sales
              SET status='posted', posted_at=?, tweet_id=?, tweet_text=?, posting_at=NULL, next_attempt_at=NULL
-             WHERE sale_id=?`
+             WHERE sale_id=?`,
         ).run(postedAt, tweetId, tweetText, saleId);
     }
 
     requeueAfterRateLimit(saleId: string): void {
         db.prepare(
-            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=NULL WHERE sale_id=?`
+            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=NULL WHERE sale_id=?`,
         ).run(saleId);
     }
 
     scheduleRetry(saleId: string, nextAttemptAt: number): void {
         db.prepare(
-            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=?, attempt_count=COALESCE(attempt_count,0)+1 WHERE sale_id=?`
+            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=?, attempt_count=COALESCE(attempt_count,0)+1 WHERE sale_id=?`,
         ).run(nextAttemptAt, saleId);
     }
 
     listStalePosting(cutoff: number): QueuedSale[] {
         const rows = db
             .prepare(
-                `SELECT sale_id, payload, attempt_count, tweet_text FROM sales WHERE status='posting' AND posting_at < ?`
+                `SELECT sale_id, payload, attempt_count, tweet_text FROM sales WHERE status='posting' AND posting_at < ?`,
             )
             .all(cutoff) as
-            | { sale_id: string; payload: string; attempt_count?: number; tweet_text?: string }[]
+            | {
+                  sale_id: string;
+                  payload: string;
+                  attempt_count?: number;
+                  tweet_text?: string;
+              }[]
             | [];
         return rows.map((row) => ({
             sale: deserializeSale(row.payload),
@@ -187,7 +193,7 @@ export class SqliteSaleRepository implements SaleRepository {
 
     requeueStale(saleId: string, nextAttemptAt: number): void {
         db.prepare(
-            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=? WHERE sale_id=?`
+            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=? WHERE sale_id=?`,
         ).run(nextAttemptAt, saleId);
     }
 
@@ -198,7 +204,7 @@ export class SqliteSaleRepository implements SaleRepository {
         try {
             db.prepare(
                 `DELETE FROM sales WHERE (status='posted' OR status='failed' OR status='seen')
-                 AND COALESCE(posted_at, seen_at, created_at) < ?`
+                 AND COALESCE(posted_at, seen_at, created_at) < ?`,
             ).run(cutoff);
             this.setMetaNumber("last_prune_at", now);
             db.exec("COMMIT");
@@ -218,6 +224,9 @@ export class SqliteSaleRepository implements SaleRepository {
     }
 
     private setMetaNumber(key: string, value: number): void {
-        db.prepare("REPLACE INTO meta(key,value) VALUES(?,?)").run(key, String(value));
+        db.prepare("REPLACE INTO meta(key,value) VALUES(?,?)").run(
+            key,
+            String(value),
+        );
     }
 }

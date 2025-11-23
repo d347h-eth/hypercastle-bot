@@ -20,4 +20,3 @@ export class FakeSocialPublisher implements SocialPublisher {
         return this.timeline.slice(0, max);
     }
 }
-
