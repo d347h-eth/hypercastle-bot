@@ -34,6 +34,7 @@ Important:
 - Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
 - `TWEET_TEMPLATE` defaults to "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})".
 - On X 429, posting halts until the next daily reset (no retries until then).
+- The app is currently wired to the in-memory `FakeSocialPublisher` for easy QA; swap to `TwitterPublisher` in `src/index.ts` for production.
 
 Notes:
 - OAuth 1.0a user tokens (X_APP_KEY/SECRET + X_ACCESS_TOKEN/SECRET) are the simplest for posting.
@@ -54,7 +55,13 @@ yarn dev
 - `migrations/` — SQLite schema migrations (auto-run on startup)
 - `data/` — local SQLite DB (gitignored; mounted as volume in Docker)
 
+### Architecture
+
+- Application: `src/application/*` orchestrates polling/posting.
+- Domain: `src/domain/*` holds core types and ports (interfaces).
+- Infra (adapters): HTTP feed (`src/infra/http/*`), SQLite repo + rate limiter (`src/infra/sqlite/*`), Twitter (`src/infra/twitter/*`).
+
 ## Notes
 
-- The sales feed adapter in `src/services/salesFeed.ts` is intentionally simple. Update the mapping to match your feed (unique sale ID, timestamps, fields for templating).
+- The sales feed adapter in `src/infra/http/reservoirSalesFeed.ts` is intentionally simple. Update the mapping to match your feed if it changes.
 - Recovery matches by `tokenId + price + symbol + take-{orderSide}`.
