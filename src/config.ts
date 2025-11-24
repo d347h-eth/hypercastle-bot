@@ -33,6 +33,7 @@ export interface Config {
     };
 
     tweetTemplate: string;
+    useFakePublisher: boolean;
 }
 
 export const config: Config = {
@@ -59,7 +60,10 @@ export const config: Config = {
 
     tweetTemplate:
         process.env.TWEET_TEMPLATE ||
-        "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})",
+        "#{tokenId} | {name} | {price} {symbol} (take-{orderSide})\n{Mode} {Chroma}{Antenna}\n{Zone} B{Biome}",
+
+    useFakePublisher:
+        (process.env.USE_FAKE_PUBLISHER || "false").toLowerCase() === "true",
 };
 
 export function validateConfig(): void {

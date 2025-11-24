@@ -4,6 +4,14 @@ export interface QueuedSale {
     sale: Sale;
     attemptCount: number;
     tweetText?: string | null;
+    artifacts?: {
+        htmlPath?: string | null;
+        framesDir?: string | null;
+        videoPath?: string | null;
+        mediaId?: string | null;
+        metadataJson?: string | null;
+        captureFps?: number | null;
+    };
 }
 
 export interface SaleRepository {
@@ -22,6 +30,14 @@ export interface SaleRepository {
     ): void;
     requeueAfterRateLimit(saleId: string): void;
     scheduleRetry(saleId: string, nextAttemptAt: number): void;
+
+    updateStatus(saleId: string, status: string): void;
+    setHtmlPath(saleId: string, path: string): void;
+    setFramesDir(saleId: string, dir: string): void;
+    setVideoPath(saleId: string, path: string): void;
+    setMediaId(saleId: string, mediaId: string): void;
+    setMetadataJson(saleId: string, metadataJson: string): void;
+    setCaptureFps(saleId: string, fps: number): void;
 
     listStalePosting(cutoff: number): QueuedSale[];
     requeueStale(saleId: string, nextAttemptAt: number): void;

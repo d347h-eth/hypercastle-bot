@@ -12,7 +12,8 @@ import { RateLimitExceededError } from "../src/domain/errors.js";
 
 const baseConfig = {
     pollIntervalMs: 10_000,
-    tweetTemplate: "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})",
+    tweetTemplate:
+        "#{tokenId} | {name} | {price} {symbol} (take-{orderSide})\\n{Mode} {Chroma}{Antenna}\\n{Zone} B{Biome}",
     stalePostingSeconds: 120,
     pruneDays: 30,
     pruneIntervalHours: 6,
@@ -37,7 +38,16 @@ class MemoryFeed implements SalesFeedPort {
     }
 }
 
-type Status = "seen" | "queued" | "posting" | "posted" | "failed";
+type Status =
+    | "seen"
+    | "queued"
+    | "posting"
+    | "posted"
+    | "failed"
+    | "fetching_html"
+    | "capturing_frames"
+    | "rendering_video"
+    | "uploading_media";
 
 interface Stored {
     sale: Sale;
@@ -143,6 +153,18 @@ class MemoryRepo implements SaleRepository {
         item.attemptCount += 1;
     }
 
+    updateStatus(saleId: string, status: string): void {
+        const item = this.store.get(saleId);
+        if (!item) return;
+        item.status = status as Status;
+    }
+    setHtmlPath(): void {}
+    setFramesDir(): void {}
+    setVideoPath(): void {}
+    setMediaId(): void {}
+    setMetadataJson(): void {}
+    setCaptureFps(): void {}
+
     listStalePosting(cutoff: number): QueuedSale[] {
         return Array.from(this.store.values())
             .filter(
@@ -211,6 +233,9 @@ class MemoryPublisher implements SocialPublisher {
         this.posted.push(text);
         return { id: `t${this.posted.length}`, text };
     }
+    async uploadMedia(): Promise<string> {
+        return "media123";
+    }
     async fetchRecent(limit: number) {
         return this.posted
             .slice(0, limit)
@@ -218,21 +243,42 @@ class MemoryPublisher implements SocialPublisher {
     }
 }
 
+class StubWorkflow {
+    constructor(
+        private repo: MemoryRepo,
+        private behavior: "ok" | "ratelimit" | "error" = "ok",
+    ) {}
+
+    async process(queued: QueuedSale): Promise<"posted" | "deferred"> {
+        if (this.behavior === "ratelimit") {
+            throw new RateLimitExceededError();
+        }
+        if (this.behavior === "error") {
+            throw new Error("boom");
+        }
+        this.repo.markPosted(queued.sale.id, "tw", "text", Date.now() / 1000);
+        return "posted";
+    }
+}
+
 describe("BotService", () => {
     it("seeds on first bootstrap", async () => {
         const repo = new MemoryRepo();
         const feed = new MemoryFeed([makeSale("s1")]);
-        const bot = new BotService({
-            feed,
-            repo,
-            rateLimiter: new MemoryRateLimiter({
-                window: "w",
-                used: 0,
-                limit: 5,
-            }),
-            publisher: new MemoryPublisher(),
-            config: baseConfig,
-        });
+        const bot = new BotService(
+            {
+                feed,
+                repo,
+                rateLimiter: new MemoryRateLimiter({
+                    window: "w",
+                    used: 0,
+                    limit: 5,
+                }),
+                publisher: new MemoryPublisher(),
+                config: baseConfig,
+            },
+            new StubWorkflow(repo),
+        );
 
         await bot.bootstrapIfNeeded();
 
@@ -245,21 +291,23 @@ describe("BotService", () => {
         repo.markInitialized();
         const feed = new MemoryFeed([makeSale("s2", 0.5)]);
         const publisher = new MemoryPublisher();
-        const bot = new BotService({
-            feed,
-            repo,
-            rateLimiter: new MemoryRateLimiter({
-                window: "w",
-                used: 0,
-                limit: 2,
-            }),
-            publisher,
-            config: baseConfig,
-        });
+        const bot = new BotService(
+            {
+                feed,
+                repo,
+                rateLimiter: new MemoryRateLimiter({
+                    window: "w",
+                    used: 0,
+                    limit: 2,
+                }),
+                publisher,
+                config: baseConfig,
+            },
+            new StubWorkflow(repo),
+        );
 
         await bot.pollOnce();
 
-        expect(publisher.posted.length).toBe(1);
         expect(repo.getStatus("s2")).toBe("posted");
     });
 
@@ -273,13 +321,16 @@ describe("BotService", () => {
             used: 0,
             limit: 1,
         });
-        const bot = new BotService({
-            feed,
-            repo,
-            rateLimiter,
-            publisher,
-            config: baseConfig,
-        });
+        const bot = new BotService(
+            {
+                feed,
+                repo,
+                rateLimiter,
+                publisher,
+                config: baseConfig,
+            },
+            new StubWorkflow(repo, "ratelimit"),
+        );
 
         await bot.pollOnce();
 
@@ -293,24 +344,27 @@ describe("BotService", () => {
         const feed = new MemoryFeed([makeSale("s4", 1.1)]);
         const publisher: SocialPublisher = {
             post: vi.fn().mockRejectedValue(new Error("boom")),
+            uploadMedia: vi.fn(),
             fetchRecent: vi.fn().mockResolvedValue([]),
         };
-        const bot = new BotService({
-            feed,
-            repo,
-            rateLimiter: new MemoryRateLimiter({
-                window: "w",
-                used: 0,
-                limit: 5,
-            }),
-            publisher,
-            config: baseConfig,
-        });
+        const bot = new BotService(
+            {
+                feed,
+                repo,
+                rateLimiter: new MemoryRateLimiter({
+                    window: "w",
+                    used: 0,
+                    limit: 5,
+                }),
+                publisher,
+                config: baseConfig,
+            },
+            new StubWorkflow(repo, "error"),
+        );
 
         await bot.pollOnce();
 
         expect(repo.getStatus("s4")).toBe("queued");
-        expect((publisher.post as any).mock.calls.length).toBe(1);
         expect(repo.getAttemptCount("s4")).toBe(1);
     });
 });

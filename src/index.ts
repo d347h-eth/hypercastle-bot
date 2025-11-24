@@ -6,6 +6,7 @@ import { ReservoirSalesFeed } from "./infra/http/reservoirSalesFeed.js";
 import { SqliteSaleRepository } from "./infra/sqlite/saleRepository.js";
 import { SqliteRateLimiter } from "./infra/sqlite/rateLimiter.js";
 import { FakeSocialPublisher } from "./infra/social/fakePublisher.js";
+import { TwitterPublisher } from "./infra/twitter/twitterPublisher.js";
 
 async function runMigrations() {
     const runner = createMigrationRunner();
@@ -29,8 +30,9 @@ async function main() {
             config.rateResetHourUtc,
             config.rateMaxPerDay,
         ),
-        // Use the fake publisher for local QA; swap to TwitterPublisher for production.
-        publisher: new FakeSocialPublisher(),
+        publisher: config.useFakePublisher
+            ? new FakeSocialPublisher()
+            : new TwitterPublisher(),
         config: {
             pollIntervalMs: config.pollIntervalMs,
             tweetTemplate: config.tweetTemplate,

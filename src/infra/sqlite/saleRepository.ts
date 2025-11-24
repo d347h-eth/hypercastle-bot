@@ -115,9 +115,10 @@ export class SqliteSaleRepository implements SaleRepository {
     claimNextReady(now: number): QueuedSale | null {
         const row = db
             .prepare(
-                `SELECT sale_id, payload, attempt_count, tweet_text
+                `SELECT sale_id, payload, attempt_count, tweet_text, html_path, frames_dir, video_path, media_id, metadata_json, capture_fps, status
                  FROM sales
-                 WHERE status='queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
+                 WHERE status IN ('queued','fetching_html','capturing_frames','rendering_video','uploading_media','posting')
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
                  ORDER BY created_at ASC
                  LIMIT 1`,
             )
@@ -127,15 +128,26 @@ export class SqliteSaleRepository implements SaleRepository {
                   payload: string;
                   attempt_count?: number;
                   tweet_text?: string;
+                  html_path?: string | null;
+                  frames_dir?: string | null;
+                  video_path?: string | null;
+                  media_id?: string | null;
+                  metadata_json?: string | null;
+                  status?: string;
+                  capture_fps?: number | null;
               }
             | undefined;
         if (!row) return null;
 
         const updated = db
             .prepare(
-                `UPDATE sales SET status='posting', posting_at=? WHERE sale_id=? AND status='queued'`,
+                `UPDATE sales
+                 SET posting_at=?
+                 WHERE sale_id=?
+                   AND status IN ('queued','fetching_html','capturing_frames','rendering_video','uploading_media','posting')
+                   AND (next_attempt_at IS NULL OR next_attempt_at <= ?)`,
             )
-            .run(now, row.sale_id);
+            .run(now, row.sale_id, now);
         if (updated.changes === 0) return null;
 
         const sale = deserializeSale(row.payload);
@@ -143,6 +155,14 @@ export class SqliteSaleRepository implements SaleRepository {
             sale,
             attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
             tweetText: row.tweet_text,
+            artifacts: {
+                htmlPath: row.html_path,
+                framesDir: row.frames_dir,
+                videoPath: row.video_path,
+                mediaId: row.media_id,
+                metadataJson: row.metadata_json,
+                captureFps: row.capture_fps,
+            },
         };
     }
 
@@ -161,20 +181,69 @@ export class SqliteSaleRepository implements SaleRepository {
 
     requeueAfterRateLimit(saleId: string): void {
         db.prepare(
-            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=NULL WHERE sale_id=?`,
+            `UPDATE sales SET posting_at=NULL, next_attempt_at=NULL WHERE sale_id=?`,
         ).run(saleId);
     }
 
     scheduleRetry(saleId: string, nextAttemptAt: number): void {
         db.prepare(
-            `UPDATE sales SET status='queued', posting_at=NULL, next_attempt_at=?, attempt_count=COALESCE(attempt_count,0)+1 WHERE sale_id=?`,
+            `UPDATE sales SET posting_at=NULL, next_attempt_at=?, attempt_count=COALESCE(attempt_count,0)+1 WHERE sale_id=?`,
         ).run(nextAttemptAt, saleId);
+    }
+
+    updateStatus(saleId: string, status: string): void {
+        db.prepare(`UPDATE sales SET status=? WHERE sale_id=?`).run(
+            status,
+            saleId,
+        );
+    }
+
+    setHtmlPath(saleId: string, pathStr: string): void {
+        db.prepare(`UPDATE sales SET html_path=? WHERE sale_id=?`).run(
+            pathStr,
+            saleId,
+        );
+    }
+
+    setFramesDir(saleId: string, dir: string): void {
+        db.prepare(`UPDATE sales SET frames_dir=? WHERE sale_id=?`).run(
+            dir,
+            saleId,
+        );
+    }
+
+    setVideoPath(saleId: string, pathStr: string): void {
+        db.prepare(`UPDATE sales SET video_path=? WHERE sale_id=?`).run(
+            pathStr,
+            saleId,
+        );
+    }
+
+    setMediaId(saleId: string, mediaId: string): void {
+        db.prepare(`UPDATE sales SET media_id=? WHERE sale_id=?`).run(
+            mediaId,
+            saleId,
+        );
+    }
+
+    setMetadataJson(saleId: string, metadataJson: string): void {
+        db.prepare(`UPDATE sales SET metadata_json=? WHERE sale_id=?`).run(
+            metadataJson,
+            saleId,
+        );
+    }
+
+    setCaptureFps(saleId: string, fps: number): void {
+        db.prepare(`UPDATE sales SET capture_fps=? WHERE sale_id=?`).run(
+            fps,
+            saleId,
+        );
     }
 
     listStalePosting(cutoff: number): QueuedSale[] {
         const rows = db
             .prepare(
-                `SELECT sale_id, payload, attempt_count, tweet_text FROM sales WHERE status='posting' AND posting_at < ?`,
+                `SELECT sale_id, payload, attempt_count, tweet_text, metadata_json FROM sales WHERE status='posting' AND posting_at < ?`,
             )
             .all(cutoff) as
             | {
@@ -182,12 +251,14 @@ export class SqliteSaleRepository implements SaleRepository {
                   payload: string;
                   attempt_count?: number;
                   tweet_text?: string;
+                  metadata_json?: string | null;
               }[]
             | [];
         return rows.map((row) => ({
             sale: deserializeSale(row.payload),
             attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
             tweetText: row.tweet_text,
+            artifacts: { metadataJson: row.metadata_json },
         }));
     }
 

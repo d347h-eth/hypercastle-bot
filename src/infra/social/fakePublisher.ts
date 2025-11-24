@@ -7,12 +7,18 @@ let counter = 0;
 export class FakeSocialPublisher implements SocialPublisher {
     private timeline: Tweet[] = [];
 
-    async post(text: string): Promise<Tweet> {
+    async post(text: string, mediaIds?: string[]): Promise<Tweet> {
         const id = `fake-${Date.now()}-${++counter}`;
         const tweet = { id, text };
         this.timeline.unshift(tweet);
-        logger.info("[FAKE] Tweet posted", { id, text });
+        logger.info("[FAKE] Tweet posted", { id, text, mediaIds });
         return tweet;
+    }
+
+    async uploadMedia(videoPath: string): Promise<string> {
+        const mediaId = `fake-media-${Date.now()}`;
+        logger.info("[FAKE] Media uploaded", { videoPath, mediaId });
+        return mediaId;
     }
 
     async fetchRecent(limit: number): Promise<Tweet[]> {

@@ -3,10 +3,11 @@ import { SaleRepository } from "../domain/ports/saleRepository.js";
 import { RateLimiter } from "../domain/ports/rateLimiter.js";
 import { SocialPublisher } from "../domain/ports/socialPublisher.js";
 import { RateLimitExceededError } from "../domain/errors.js";
-import { formatTweet, formatPrice } from "./tweetFormatter.js";
+import { formatPrice } from "./tweetFormatter.js";
 import { computeBackoffSeconds } from "./backoff.js";
-import { Sale } from "../domain/models.js";
 import { logger } from "../logger.js";
+import { PostingWorkflow } from "./workflow.js";
+import { formatEnrichedText } from "../infra/http/tokenMetadata.js";
 
 export interface BotConfig {
     pollIntervalMs: number;
@@ -18,6 +19,7 @@ export interface BotConfig {
 
 export class BotService {
     private polling = false;
+    private workflow: PostingWorkflow;
 
     constructor(
         private readonly deps: {
@@ -27,7 +29,15 @@ export class BotService {
             publisher: SocialPublisher;
             config: BotConfig;
         },
-    ) {}
+        workflow?: PostingWorkflow,
+    ) {
+        this.workflow =
+            workflow ||
+            new PostingWorkflow(
+                { repo: deps.repo, publisher: deps.publisher },
+                { artifactsRoot: "data/artifacts" },
+            );
+    }
 
     async bootstrapIfNeeded(): Promise<void> {
         if (this.deps.repo.isInitialized()) return;
@@ -47,9 +57,20 @@ export class BotService {
 
         for (const item of stale) {
             const sale = item.sale;
-            const expected = formatTweet(
-                this.deps.config.tweetTemplate,
-                sale,
+            let attrs: any = {};
+            try {
+                if (item.artifacts?.metadataJson) {
+                    attrs = JSON.parse(item.artifacts.metadataJson);
+                }
+            } catch {}
+            const expected = formatEnrichedText(
+                "",
+                attrs,
+                sale.tokenId,
+                sale.name,
+                formatPrice(sale.price.amount),
+                sale.price.symbol,
+                sale.orderSide,
             ).trim();
             const priceStr = `${formatPrice(sale.price.amount)} ${sale.price.symbol}`;
             const tokenTag = `#${sale.tokenId}`;
@@ -110,25 +131,14 @@ export class BotService {
         while (remaining > 0) {
             const queued = this.deps.repo.claimNextReady(unix());
             if (!queued) break;
-
-            const tweetText = formatTweet(
-                this.deps.config.tweetTemplate,
-                queued.sale,
-            );
             try {
-                const tweet = await this.deps.publisher.post(tweetText);
-                this.deps.repo.markPosted(
-                    queued.sale.id,
-                    tweet.id,
-                    tweetText,
-                    unix(),
-                );
-                this.deps.rateLimiter.increment();
-                remaining -= 1;
-                logger.info("Posted sale", {
-                    saleId: queued.sale.id,
-                    tweetId: tweet.id,
-                });
+                const res = await this.workflow.process(queued);
+                if (res === "posted") {
+                    this.deps.rateLimiter.increment();
+                    remaining -= 1;
+                } else {
+                    break;
+                }
             } catch (e) {
                 if (e instanceof RateLimitExceededError) {
                     this.deps.repo.requeueAfterRateLimit(queued.sale.id);

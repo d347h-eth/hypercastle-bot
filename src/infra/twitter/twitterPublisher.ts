@@ -18,14 +18,50 @@ export class TwitterPublisher implements SocialPublisher {
         });
     }
 
-    async post(text: string): Promise<Tweet> {
+    async post(text: string, mediaIds?: string[]): Promise<Tweet> {
+        logger.info("[X] Posting tweet", {
+            hasMedia: !!(mediaIds && mediaIds.length),
+        });
         try {
-            const res = await this.client.v2.tweet(text);
+            const res = await this.client.v2.tweet({
+                text,
+                media:
+                    mediaIds && mediaIds.length
+                        ? { media_ids: mediaIds }
+                        : undefined,
+            });
+            logger.info("[X] Tweet posted", { tweetId: res.data.id });
             return { id: res.data.id, text: text };
         } catch (e) {
             if (isRateLimitedError(e)) {
+                logger.warn("[X] Tweet rate limited", { error: String(e) });
                 throw new RateLimitExceededError();
             }
+            logger.error("[X] Tweet failed", { error: String(e) });
+            throw e;
+        }
+    }
+
+    async uploadMedia(
+        videoPath: string,
+        mediaType = "video/mp4",
+    ): Promise<string> {
+        logger.info("[X] Uploading media", { videoPath });
+        try {
+            const mediaId = await this.client.v1.uploadMedia(videoPath, {
+                type: "video",
+                mimeType: mediaType,
+            });
+            logger.info("[X] Media uploaded", { mediaId });
+            return mediaId;
+        } catch (e) {
+            if (isRateLimitedError(e)) {
+                logger.warn("[X] Media upload rate limited", {
+                    error: String(e),
+                });
+                throw new RateLimitExceededError();
+            }
+            logger.error("[X] Media upload failed", { error: String(e) });
             throw e;
         }
     }
