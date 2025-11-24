@@ -9,6 +9,7 @@ Highlights:
 -   Daily rate-limit window with queue buffering
 -   First-run bootstrap: ingests current feed without posting
 -   Optional timeline verification (1 req / 15min) for crash recovery
+-   Media pipeline: on-chain HTML fetch → screencast frame capture (Puppeteer) → video render (ffmpeg) → token metadata enrichment → X media upload + post; artifacts persisted per sale for recovery and cleaned after posting
 
 ## Quick Start
 
@@ -34,9 +35,9 @@ Environment variables are documented in `.env.example`.
 Important:
 
 -   Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
--   `TWEET_TEMPLATE` defaults to "#{tokenId} - {name} - {price} {symbol} (take-{orderSide})".
+-   `TWEET_TEMPLATE` defaults to a multi-line enriched template with Mode/Chroma/Zone/Biome/Antenna.
 -   On X 429, posting halts until the next daily reset (no retries until then).
--   The app is currently wired to the in-memory `FakeSocialPublisher` for easy QA; swap to `TwitterPublisher` in `src/index.ts` for production.
+-   Set `USE_FAKE_PUBLISHER=true` to log locally instead of posting to X; default uses the real X publisher (requires creds).
 
 Notes:
 
@@ -60,9 +61,9 @@ yarn dev
 
 ### Architecture
 
--   Application: `src/application/*` orchestrates polling/posting.
+-   Application: `src/application/*` orchestrates polling/recovery; `src/application/workflow.ts` runs the media pipeline.
 -   Domain: `src/domain/*` holds core types and ports (interfaces).
--   Infra (adapters): HTTP feed (`src/infra/http/*`), SQLite repo + rate limiter (`src/infra/sqlite/*`), Twitter (`src/infra/twitter/*`).
+-   Infra (adapters): HTTP feed (`src/infra/http/*`), on-chain fetcher (`src/infra/onchain/*`), capture/render (`src/infra/capture/*`), SQLite repo + rate limiter (`src/infra/sqlite/*`), Twitter (`src/infra/twitter/*`), Fake publisher (`src/infra/social/*`).
 
 ## Notes
 
