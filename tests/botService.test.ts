@@ -6,7 +6,6 @@ import {
     SaleRepository,
     QueuedSale,
 } from "../src/domain/ports/saleRepository.js";
-import { RateLimiter, RateUsage } from "../src/domain/ports/rateLimiter.js";
 import { SocialPublisher } from "../src/domain/ports/socialPublisher.js";
 import { RateLimitExceededError } from "../src/domain/errors.js";
 
@@ -108,7 +107,7 @@ class MemoryRepo implements SaleRepository {
         const candidates = Array.from(this.store.values())
             .filter(
                 (s) =>
-                    s.status === "queued" &&
+                    (s.status === "queued" || s.status === "posting") &&
                     (!s.nextAttemptAt || s.nextAttemptAt <= now),
             )
             .sort((a, b) => a.sale.timestamp - b.sale.timestamp);
@@ -136,12 +135,13 @@ class MemoryRepo implements SaleRepository {
         item.tweetText = tweetText;
     }
 
-    requeueAfterRateLimit(saleId: string): void {
+    requeueAfterRateLimit(saleId: string, next?: number): void {
         const item = this.store.get(saleId);
         if (!item) return;
         item.status = "queued";
         item.postingAt = null;
-        item.nextAttemptAt = null;
+        item.nextAttemptAt = next ?? null;
+        item.attemptCount += 1;
     }
 
     scheduleRetry(saleId: string, nextAttemptAt: number): void {
@@ -161,7 +161,8 @@ class MemoryRepo implements SaleRepository {
     setHtmlPath(): void {}
     setFramesDir(): void {}
     setVideoPath(): void {}
-    setMediaId(): void {}
+    setMediaId(_: string, __: string, ___: number): void {}
+    clearMediaUpload(_: string): void {}
     setMetadataJson(): void {}
     setCaptureFps(): void {}
 
@@ -210,19 +211,6 @@ class MemoryRepo implements SaleRepository {
     }
 }
 
-class MemoryRateLimiter implements RateLimiter {
-    constructor(private usage: RateUsage) {}
-    getUsage(): RateUsage {
-        return this.usage;
-    }
-    increment(): void {
-        this.usage = { ...this.usage, used: this.usage.used + 1 };
-    }
-    exhaustUntilReset(): void {
-        this.usage = { ...this.usage, used: this.usage.limit };
-    }
-}
-
 class MemoryPublisher implements SocialPublisher {
     public posted: string[] = [];
     constructor(private readonly failWith429 = false) {}
@@ -240,6 +228,9 @@ class MemoryPublisher implements SocialPublisher {
         return this.posted
             .slice(0, limit)
             .map((text, i) => ({ id: `t${i + 1}`, text }));
+    }
+    async checkRateLimit() {
+        return { limit: 10, remaining: 10, reset: Math.floor(Date.now() / 1000) + 60 };
     }
 }
 
@@ -269,11 +260,6 @@ describe("BotService", () => {
             {
                 feed,
                 repo,
-                rateLimiter: new MemoryRateLimiter({
-                    window: "w",
-                    used: 0,
-                    limit: 5,
-                }),
                 publisher: new MemoryPublisher(),
                 config: baseConfig,
             },
@@ -295,11 +281,6 @@ describe("BotService", () => {
             {
                 feed,
                 repo,
-                rateLimiter: new MemoryRateLimiter({
-                    window: "w",
-                    used: 0,
-                    limit: 2,
-                }),
                 publisher,
                 config: baseConfig,
             },
@@ -316,16 +297,10 @@ describe("BotService", () => {
         repo.markInitialized();
         const feed = new MemoryFeed([makeSale("s3", 0.9)]);
         const publisher = new MemoryPublisher(true);
-        const rateLimiter = new MemoryRateLimiter({
-            window: "w",
-            used: 0,
-            limit: 1,
-        });
         const bot = new BotService(
             {
                 feed,
                 repo,
-                rateLimiter,
                 publisher,
                 config: baseConfig,
             },
@@ -335,7 +310,6 @@ describe("BotService", () => {
         await bot.pollOnce();
 
         expect(repo.getStatus("s3")).toBe("queued");
-        expect(rateLimiter.getUsage().used).toBe(1);
     });
 
     it("schedules retry on non-rate error", async () => {
@@ -346,16 +320,16 @@ describe("BotService", () => {
             post: vi.fn().mockRejectedValue(new Error("boom")),
             uploadMedia: vi.fn(),
             fetchRecent: vi.fn().mockResolvedValue([]),
+            checkRateLimit: vi.fn().mockResolvedValue({
+                limit: 10,
+                remaining: 10,
+                reset: Math.floor(Date.now() / 1000) + 60,
+            }),
         };
         const bot = new BotService(
             {
                 feed,
                 repo,
-                rateLimiter: new MemoryRateLimiter({
-                    window: "w",
-                    used: 0,
-                    limit: 5,
-                }),
                 publisher,
                 config: baseConfig,
             },

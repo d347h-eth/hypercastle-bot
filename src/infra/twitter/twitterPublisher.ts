@@ -1,13 +1,18 @@
 import { TwitterApi, ApiResponseError } from "twitter-api-v2";
 import { config } from "../../config.js";
 import { RateLimitExceededError } from "../../domain/errors.js";
-import { SocialPublisher } from "../../domain/ports/socialPublisher.js";
+import {
+    SocialPublisher,
+    RateLimitInfo,
+} from "../../domain/ports/socialPublisher.js";
 import { Tweet } from "../../domain/models.js";
 import { logger } from "../../logger.js";
+import { RateControl, parseRate } from "./rateControl.js";
 
 export class TwitterPublisher implements SocialPublisher {
     private client: TwitterApi;
     private userId: string | null = null;
+    private rates = new RateControl();
 
     constructor() {
         this.client = new TwitterApi({
@@ -21,23 +26,61 @@ export class TwitterPublisher implements SocialPublisher {
     async post(text: string, mediaIds?: string[]): Promise<Tweet> {
         logger.info("[X] Posting tweet", {
             hasMedia: !!(mediaIds && mediaIds.length),
+            mediaIds,
         });
         try {
-            const res = await this.client.v2.tweet({
-                text,
-                media:
-                    mediaIds && mediaIds.length
-                        ? { media_ids: mediaIds }
-                        : undefined,
+            this.rates.guard("post");
+            const mediaTuple =
+                mediaIds && mediaIds.length
+                    ? (mediaIds.slice(0, 4) as
+                          | [string]
+                          | [string, string]
+                          | [string, string, string]
+                          | [string, string, string, string])
+                    : undefined;
+            const res: any = await (this.client.v2 as any).tweet(
+                {
+                    text,
+                    media: mediaTuple ? { media_ids: mediaTuple } : undefined,
+                },
+                { fullResponse: true },
+            );
+            const rateInfo = extractRateInfoFromResponse(res);
+            this.rates.onSuccess("post", rateInfo);
+            logRateDebug("post", "success", rateInfo, res?.response?.headers);
+            logger.info("[X] Tweet posted", {
+                tweetId: res.data.id,
+                rateLimit: rateInfo,
             });
-            logger.info("[X] Tweet posted", { tweetId: res.data.id });
             return { id: res.data.id, text: text };
         } catch (e) {
+            const info = this.rates.onError(
+                "post",
+                extractRateInfoFromError(e),
+            );
+            logRateDebug(
+                "post",
+                "error",
+                info,
+                (e as any)?.response?.headers,
+            );
+            const resetAt = info?.reset;
             if (isRateLimitedError(e)) {
-                logger.warn("[X] Tweet rate limited", { error: String(e) });
-                throw new RateLimitExceededError();
+                logger.warn("[X] Tweet rate limited", {
+                    endpoint: "post",
+                    error: String(e),
+                    resetAt,
+                    remaining: info?.remaining,
+                    limit: info?.limit,
+                });
+                throw new RateLimitExceededError(
+                    "Tweet rate limited",
+                    resetAt,
+                    info?.remaining,
+                    info?.limit,
+                );
             }
-            logger.error("[X] Tweet failed", { error: String(e) });
+            logger.error("[X] Tweet failed", { error: String(e), resetAt });
             throw e;
         }
     }
@@ -48,20 +91,52 @@ export class TwitterPublisher implements SocialPublisher {
     ): Promise<string> {
         logger.info("[X] Uploading media", { videoPath });
         try {
-            const mediaId = await this.client.v1.uploadMedia(videoPath, {
-                type: "video",
-                mimeType: mediaType,
-            });
-            logger.info("[X] Media uploaded", { mediaId });
+            this.rates.guard("post");
+            const mediaId = await (this.client.v1 as any).uploadMedia(
+                videoPath,
+                {
+                    type: "video",
+                    mimeType: mediaType,
+                },
+            );
+            const rateInfo = extractRateInfoFromResponse(mediaId);
+            this.rates.onSuccess("post", rateInfo);
+            logRateDebug(
+                "post",
+                "success_upload",
+                rateInfo,
+                (mediaId as any)?.response?.headers,
+            );
+            logger.info("[X] Media uploaded", { mediaId, rateLimit: rateInfo });
             return mediaId;
         } catch (e) {
+            const info = this.rates.onError(
+                "post",
+                extractRateInfoFromError(e),
+            );
+            logRateDebug(
+                "post",
+                "error_upload",
+                info,
+                (e as any)?.response?.headers,
+            );
+            const resetAt = info?.reset;
             if (isRateLimitedError(e)) {
                 logger.warn("[X] Media upload rate limited", {
+                    endpoint: "post",
                     error: String(e),
+                    resetAt,
+                    remaining: info?.remaining,
+                    limit: info?.limit,
                 });
-                throw new RateLimitExceededError();
+                throw new RateLimitExceededError(
+                    "Media upload rate limited",
+                    resetAt,
+                    info?.remaining,
+                    info?.limit,
+                );
             }
-            logger.error("[X] Media upload failed", { error: String(e) });
+            logger.error("[X] Media upload failed", { error: String(e), resetAt });
             throw e;
         }
     }
@@ -90,6 +165,18 @@ export class TwitterPublisher implements SocialPublisher {
         }
     }
 
+    async checkRateLimit(): Promise<RateLimitInfo | null> {
+        const snapshot = this.rates.snapshot("post");
+        if (
+            snapshot.limit === undefined &&
+            snapshot.remaining === undefined &&
+            snapshot.reset === undefined
+        ) {
+            return null;
+        }
+        return snapshot;
+    }
+
     private async ensureUserId(): Promise<string | null> {
         if (this.userId) return this.userId;
         if (config.x.userId) {
@@ -106,6 +193,7 @@ export class TwitterPublisher implements SocialPublisher {
         }
         return this.userId;
     }
+
 }
 
 function isRateLimitedError(e: unknown): boolean {
@@ -115,4 +203,74 @@ function isRateLimitedError(e: unknown): boolean {
     }
     const msg = String(e);
     return /429/.test(msg);
+}
+
+function extractRateInfoFromError(e: unknown): RateLimitInfo | null {
+    if (e && typeof e === "object") {
+        const err = e as ApiResponseError;
+        const rl: any = (err as any).rateLimit || (err as any).rateLimits;
+        const info = parseRate(rl) || extractRateInfoFromResponse(rl);
+        if (info) return info;
+        const headers = (err as any)?.response?.headers;
+        if (headers) {
+            return parseRate({
+                limit: headers["x-ratelimit-limit"],
+                remaining: headers["x-ratelimit-remaining"],
+                reset: headers["x-ratelimit-reset"],
+            });
+        }
+    }
+    return null;
+}
+
+function extractRateInfoFromResponse(res: any): RateLimitInfo | null {
+    if (!res) return null;
+    const rate = (res as any).rateLimit || (res as any).rateLimits;
+    const parsed = parseRate(rate);
+    if (parsed) return parsed;
+    const headers = (res as any)?.response?.headers || (res as any)?.headers;
+    if (headers) {
+        return parseRate({
+            limit: headers["x-ratelimit-limit"],
+            remaining: headers["x-ratelimit-remaining"],
+            reset: headers["x-ratelimit-reset"],
+        });
+    }
+    return null;
+}
+
+function logRateDebug(
+    endpoint: "post",
+    stage: string,
+    rate: RateLimitInfo | null,
+    headers?: any,
+): void {
+    if (!config.debugVerbose) return;
+    const snapshot = headersSnapshot(headers);
+    logger.debug("[X] Rate headers", {
+        endpoint,
+        stage,
+        rate,
+        headers: snapshot,
+    });
+}
+
+function headersSnapshot(headers: any): Record<string, unknown> | undefined {
+    if (!headers) return undefined;
+    const get = (key: string) =>
+        headers[key] ??
+        headers[key.toLowerCase()] ??
+        headers.get?.(key) ??
+        headers.get?.(key.toLowerCase());
+    const limit = get("x-ratelimit-limit");
+    const remaining = get("x-ratelimit-remaining");
+    const reset = get("x-ratelimit-reset");
+    if (
+        limit === undefined &&
+        remaining === undefined &&
+        reset === undefined
+    ) {
+        return undefined;
+    }
+    return { limit, remaining, reset };
 }

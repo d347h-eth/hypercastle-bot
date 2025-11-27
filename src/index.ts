@@ -4,7 +4,6 @@ import { createMigrationRunner } from "./migrations.js";
 import { BotService } from "./application/botService.js";
 import { ReservoirSalesFeed } from "./infra/http/reservoirSalesFeed.js";
 import { SqliteSaleRepository } from "./infra/sqlite/saleRepository.js";
-import { SqliteRateLimiter } from "./infra/sqlite/rateLimiter.js";
 import { FakeSocialPublisher } from "./infra/social/fakePublisher.js";
 import { TwitterPublisher } from "./infra/twitter/twitterPublisher.js";
 
@@ -26,10 +25,6 @@ async function main() {
     const bot = new BotService({
         feed: new ReservoirSalesFeed(),
         repo: new SqliteSaleRepository(),
-        rateLimiter: new SqliteRateLimiter(
-            config.rateResetHourUtc,
-            config.rateMaxPerDay,
-        ),
         publisher: config.useFakePublisher
             ? new FakeSocialPublisher()
             : new TwitterPublisher(),

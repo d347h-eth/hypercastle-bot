@@ -6,7 +6,6 @@ import {
     SaleRepository,
     QueuedSale,
 } from "../src/domain/ports/saleRepository.js";
-import { RateLimiter, RateUsage } from "../src/domain/ports/rateLimiter.js";
 import { SocialPublisher } from "../src/domain/ports/socialPublisher.js";
 
 const config = {
@@ -77,17 +76,6 @@ class RecoveryRepo implements SaleRepository {
     }
 }
 
-class RecoveryRateLimiter implements RateLimiter {
-    constructor(private usage: RateUsage) {}
-    getUsage(): RateUsage {
-        return this.usage;
-    }
-    increment(): void {
-        this.usage = { ...this.usage, used: this.usage.used + 1 };
-    }
-    exhaustUntilReset(): void {}
-}
-
 class RecoveryPublisher implements SocialPublisher {
     constructor(private tweets: { id: string; text: string }[]) {}
     async post() {
@@ -105,16 +93,10 @@ describe("BotService recovery", () => {
         const publisher = new RecoveryPublisher([
             { id: "t1", text: "#123 - Test - 0.25 ETH (take-bid)" },
         ]);
-        const rateLimiter = new RecoveryRateLimiter({
-            window: "w",
-            used: 0,
-            limit: 10,
-        });
 
         const bot = new BotService({
             feed: new NoopFeed(),
             repo,
-            rateLimiter,
             publisher,
             config,
         });
@@ -122,23 +104,16 @@ describe("BotService recovery", () => {
         await bot.recoverInFlight();
 
         expect(repo.wasPosted("s1")).toBe(true);
-        expect(rateLimiter.getUsage().used).toBe(1);
     });
 
     it("requeues stale posting when tweet not found", async () => {
         const sale = saleFixture();
         const repo = new RecoveryRepo([{ sale, attemptCount: 0 }]);
         const publisher = new RecoveryPublisher([]);
-        const rateLimiter = new RecoveryRateLimiter({
-            window: "w",
-            used: 0,
-            limit: 10,
-        });
 
         const bot = new BotService({
             feed: new NoopFeed(),
             repo,
-            rateLimiter,
             publisher,
             config,
         });
@@ -147,6 +122,5 @@ describe("BotService recovery", () => {
 
         expect(repo.wasPosted("s1")).toBe(false);
         expect(repo.wasRequeued("s1")).toBe(true);
-        expect(rateLimiter.getUsage().used).toBe(0);
     });
 });

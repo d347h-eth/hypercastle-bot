@@ -1,4 +1,4 @@
-import { SocialPublisher } from "../../domain/ports/socialPublisher.js";
+import { RateLimitInfo, SocialPublisher } from "../../domain/ports/socialPublisher.js";
 import { Tweet } from "../../domain/models.js";
 import { logger } from "../../logger.js";
 
@@ -24,5 +24,13 @@ export class FakeSocialPublisher implements SocialPublisher {
     async fetchRecent(limit: number): Promise<Tweet[]> {
         const max = Math.max(1, Math.min(100, limit));
         return this.timeline.slice(0, max);
+    }
+
+    async checkRateLimit(): Promise<RateLimitInfo | null> {
+        return {
+            limit: 100,
+            remaining: 100,
+            reset: Math.floor(Date.now() / 1000) + 1,
+        };
     }
 }

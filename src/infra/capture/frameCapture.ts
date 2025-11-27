@@ -233,8 +233,6 @@ async function startScreencast(
         everyNthFrame: 1,
         maxWidth: config.viewport.width,
         maxHeight: config.viewport.height,
-        captureBeyondViewport: true,
-        deviceScaleFactor: 1,
     });
 
     const saveFrame = async (idx: number, buffer: Buffer) => {

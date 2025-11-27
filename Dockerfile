@@ -12,7 +12,7 @@ RUN apk add --no-cache python3 make g++
 WORKDIR /app
 
 # Copy only package manifests and Yarn config first for better caching
-COPY package.json tsconfig.json tsconfig.build.json .yarnrc.yml ./
+COPY package.json yarn.lock tsconfig.json tsconfig.build.json .yarnrc.yml ./
 
 # Install deps (PnP)
 RUN yarn install --immutable
@@ -48,4 +48,3 @@ VOLUME ["/data"]
 ENV DB_PATH=/data/bot.sqlite.db
 
 CMD ["node", "dist/index.js"]
-

@@ -9,7 +9,7 @@ This document captures the full project context: requirements, behavior, data mo
 -   First run seeds current feed as seen (no posts) to avoid historical backfill.
 -   Persist state for crash recovery (queue, attempts, posting state, rate usage, pruning) in SQLite.
 -   Optional timeline check to confirm “in-flight” posts after crashes using tweet content matching.
--   Current default uses a fake publisher for local QA; switch to real X publisher for prod.
+-   Publisher toggle via `USE_FAKE_PUBLISHER` (default real X; set true to log locally for QA).
 
 ## Configuration (env)
 
@@ -17,10 +17,9 @@ This document captures the full project context: requirements, behavior, data mo
 -   `SALES_API_KEY` — x-api-key header.
 -   `SALES_COLLECTION_ADDRESS` — contract address query param.
 -   `POLL_INTERVAL_MS` — poll cadence.
--   `RATE_LIMIT_MAX_PER_DAY` — daily post allowance (default 17).
--   `RATE_LIMIT_RESET_HOUR_UTC` — hour of reset (default 0).
 -   `DB_PATH` — SQLite path (default `./data/bot.sqlite.db`).
 -   `TWEET_TEMPLATE` — default multi-line: `"#{tokenId} | {name} | {price} {symbol} (take-{orderSide})\n{Mode} {Chroma}{Antenna}\n{Zone} B{Biome}"`.
+-   `USE_FAKE_PUBLISHER` — set to `true` to log locally instead of posting to X (default: false).
 -   X creds (for real posting): `X_APP_KEY`, `X_APP_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET`, optional `X_USER_ID`/`X_USERNAME`.
 
 ## Behavior
@@ -36,27 +35,33 @@ This document captures the full project context: requirements, behavior, data mo
     2. `capturing_frames`: Puppeteer screencast (no-sandbox args, viewport 1200x1732, heartbeat repaint) to frames `frame_0000.png`…; streaming/buffered supported; measured FPS persisted.
     3. `rendering_video`: ffmpeg (`libx264`, profile high, CRF 18, bitrate caps, yuv420p, faststart) into `video.mp4` using measured FPS.
     4. `fetch_metadata`: Reservoir `/tokens/v7` to enrich Mode/Chroma/Zone/Biome/Antenna (stored as JSON).
-    5. `uploading_media`: X chunked upload of video; `media_id` persisted.
+    5. `uploading_media`: X chunked upload of video; `media_id` + `media_uploaded_at` persisted (re-upload if older than 24h).
     6. `posting`: post enriched multi-line text with `media_ids`; on success mark posted, increment rate usage, clean artifacts.
--   **429:** requeue (clear posting_at, next_attempt_at) and exhaust local usage to halt until window reset.
+-   **429:** read `x-ratelimit-*` headers, set `next_attempt_at` to the reset (with buffer), record remote cooldown, exhaust local usage, and halt until reset.
 -   **Non-429 errors:** exponential backoff (1m → 2m → … → 30m) via `next_attempt_at`, attempt_count++.
 -   **Recovery:** on startup, find `posting` older than `stalePostingSeconds` (120s), compare against recent timeline (tokenId + price + symbol + side) to mark posted or requeue.
 -   **Pruning:** delete posted/failed/seen older than 30 days, at most every 6h.
 
+### Rate limiting
+
+-   A single rate controller (inside `TwitterPublisher`) owns all X rate logic for posting. It persists header-derived state in `meta` (`rate_state_post`) and rejects calls when `remaining` would consume the reserved slot (keeps the 17th request unused).
+-   State heals after reset: if the stored `reset` has passed, remaining is restored to the limit before the next call. When headers are missing, a synthetic reset is stored using per-slot spacing (~84m for 17/day) anchored to the last spent request so the system can self-heal without new requests. `checkRateLimit` reads the stored post snapshot (no `/2/users/me` network probe) to avoid exhausting the `/me` bucket.
+-   Headers are parsed with preference for the `userDay` bucket to align with free-tier caps. On success/429, state is refreshed from headers; if headers are missing, the controller cautiously decrements the stored remaining and sets a short fallback recovery window.
+-   Exponential backoff for 429s starts at 1s, doubles up to 2h, and is clamped to the `x-ratelimit-reset` minus a small buffer so retries never pre-date the reset; non-rate errors still back off (1m → 2m → … → 30m).
+
 ## Data Model (SQLite)
 
--   `meta(key, value)` — initialized flag, rate window/used, last_prune_at.
--   `sales` — sale_id (PK), created_at, seen_at, enqueued_at, posting_at, posted_at, status (`seen|queued|fetching_html|capturing_frames|rendering_video|uploading_media|posting|posted|failed`), tweet_id/text, payload (JSON), next_attempt_at, attempt_count, html_path, frames_dir, video_path, media_id, metadata_json, capture_fps. Indexes on status/next_attempt_at/created_at, posted_at.
+-   `meta(key, value)` — initialized flag, rate_state_post/me JSON, last_prune_at.
+-   `sales` — sale_id (PK), created_at, seen_at, enqueued_at, posting_at, posted_at, status (`seen|queued|fetching_html|capturing_frames|rendering_video|uploading_media|posting|posted|failed`), tweet_id/text, payload (JSON), next_attempt_at, attempt_count, html_path, frames_dir, video_path, media_id, media_uploaded_at, metadata_json, capture_fps. Indexes on status/next_attempt_at/created_at, posted_at.
 
 ## Components (Hexagonal)
 
 -   **Application** (`src/application/botService.ts`) orchestrates polling/recovery; **Workflow** (`src/application/workflow.ts`) runs the media pipeline per sale.
--   **Domain ports** (`src/domain/ports/*`): SalesFeedPort, SaleRepository, RateLimiter, SocialPublisher.
+-   **Domain ports** (`src/domain/ports/*`): SalesFeedPort, SaleRepository, SocialPublisher.
 -   **Domain models** (`src/domain/models.ts`): Sale, Price, Tweet, OrderSide.
 -   **Adapters (infra):**
     -   ReservoirSalesFeed (`src/infra/http/reservoirSalesFeed.ts`)
     -   SqliteSaleRepository (`src/infra/sqlite/saleRepository.ts`)
-    -   SqliteRateLimiter (`src/infra/sqlite/rateLimiter.ts`)
     -   TwitterPublisher (real) / FakeSocialPublisher (QA)
     -   On-chain parcel fetcher (`src/infra/onchain/parcelFetcher.ts`)
     -   Frame capture (`src/infra/capture/frameCapture.ts`)
@@ -84,7 +89,7 @@ Price uses up to 4 decimals (trim trailing zeros). `orderSide` normalized to `as
 ## Deployment
 
 -   Single Docker image (Node 24 alpine, Yarn PnP). Volume `/data` for SQLite. Use `.env` file for secrets.
--   For prod, switch publisher in `src/index.ts` from FakeSocialPublisher to TwitterPublisher.
+-   `USE_FAKE_PUBLISHER` (default false) controls whether posts go to X (real) or just log locally (fake).
 
 ## Testing
 
@@ -116,9 +121,9 @@ flowchart TD
         DBL[SqliteRateLimiter]
         TW[TwitterPublisher]
         FAKE[FakeSocialPublisher]
-        ONC[ParcelFetcher (on-chain)]
-        CAP[FrameCapture (Puppeteer)]
-        REND[VideoRenderer (ffmpeg)]
+        ONC[ParcelFetcher_onchain]
+        CAP[FrameCapture]
+        REND[VideoRenderer]
         META[TokenMetadata]
     end
 
@@ -137,7 +142,6 @@ flowchart TD
     RL --> DBL
     SP --> TW
     SP --> FAKE
-    ONC --> RSS
 
     subgraph Storage
         SQL[(SQLite)]
@@ -212,50 +216,72 @@ sequenceDiagram
         alt No sale available
             Bot-->>Bot: Break Loop
         else Sale available
-            Bot->>Flow: process sale
-            activate Flow
+            Bot->>Pub: checkRateLimit (cached)
+            alt remaining == 0
+                Bot->>Repo: requeueAfterRateLimit(reset)
+                Repo->>DB: update next_attempt_at
+                Bot->>Rate: exhaustUntilReset
+                Bot-->>Bot: Break Loop
+            else remaining > 0
+                Bot->>Flow: process sale
+                activate Flow
 
-            note right of Flow: Processing Phase
-            Flow->>Repo: status fetching_html
-            Flow->>RPC: fetch token HTML
-            Flow->>FS: save html
+                note right of Flow: Processing Phase
+                Flow->>Repo: status fetching_html
+                Flow->>RPC: fetch token HTML
+                Flow->>FS: save html
 
-            Flow->>Repo: status capturing_frames
-            Flow->>FS: capture frames
-            Flow->>Repo: save frames + fps
+                Flow->>Repo: status capturing_frames
+                Flow->>FS: capture frames
+                Flow->>Repo: save frames + fps
 
-            Flow->>Repo: status rendering_video
-            Flow->>FS: render video
-            Flow->>Repo: save video path
+                Flow->>Repo: status rendering_video
+                Flow->>FS: render video
+                Flow->>Repo: save video path
 
-            Flow->>Repo: status fetch_metadata
-            Flow->>Res: fetch attributes
-            Flow->>Repo: save metadata
+                Flow->>Repo: status fetch_metadata
+                Flow->>Res: fetch attributes
+                Flow->>Repo: save metadata
 
-            alt Processing Successful
                 Flow->>Repo: status uploading_media
                 Flow->>Pub: upload video
-                Pub-->>Flow: media id
-                Flow->>Repo: save media id
+                Pub->>X: chunked upload
+                alt X returns 429
+                    X-->>Pub: 429 + rate headers
+                    Pub-->>Flow: RateLimit error
+                    Flow-->>Bot: throw RateLimitExceeded
+                    Bot->>Repo: requeueAfterRateLimit(reset)
+                    Repo->>DB: update next_attempt_at
+                    Bot->>Rate: exhaustUntilReset
+                    deactivate Flow
+                    Bot-->>Bot: Break Loop
+                else Upload ok
+                    X-->>Pub: media id + headers
+                    Pub-->>Flow: media id
+                    Flow->>Repo: save media id
 
-                Flow->>Repo: status posting
-                Flow->>Pub: post text + media
-                Pub->>X: send tweet
-                X-->>Pub: tweet id
-                Pub-->>Flow: tweet
-
-                Flow->>Repo: mark posted
-                Flow->>Rate: increment
-            else Rate Limited
-                Flow->>Rate: exhaustUntilReset
-                Flow->>Repo: status rate_limited
-            else Transient Failure
-                Flow->>DB: scheduleRetry
-                Flow->>Repo: status failed
+                    Flow->>Repo: status posting
+                    Flow->>Pub: post text + media
+                    Pub->>X: POST tweet
+                    alt X returns 429
+                        X-->>Pub: 429 + rate headers
+                        Pub-->>Flow: RateLimit error
+                        Flow-->>Bot: throw RateLimitExceeded
+                        Bot->>Repo: requeueAfterRateLimit(reset)
+                        Repo->>DB: update next_attempt_at
+                        Bot->>Rate: exhaustUntilReset
+                        deactivate Flow
+                        Bot-->>Bot: Break Loop
+                    else Posted
+                        X-->>Pub: tweet id + headers
+                        Pub-->>Flow: tweet
+                        Flow->>Repo: mark posted
+                        Flow->>Rate: increment
+                        Flow->>FS: cleanup artifacts
+                        deactivate Flow
+                    end
+                end
             end
-
-            Flow->>FS: cleanup artifacts
-            deactivate Flow
         end
     end
 ```

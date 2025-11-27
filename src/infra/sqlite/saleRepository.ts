@@ -59,7 +59,7 @@ export class SqliteSaleRepository implements SaleRepository {
 
     seedSeen(sales: Sale[], seenAt: number): void {
         if (!sales.length) return;
-        const insert = db.prepare<[string, number, number, string]>(
+        const insert = db.prepare<[string, number, number, string, string]>(
             `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, status, payload)
              VALUES (?,?,?,?,?)`,
         );
@@ -115,7 +115,7 @@ export class SqliteSaleRepository implements SaleRepository {
     claimNextReady(now: number): QueuedSale | null {
         const row = db
             .prepare(
-                `SELECT sale_id, payload, attempt_count, tweet_text, html_path, frames_dir, video_path, media_id, metadata_json, capture_fps, status
+                `SELECT sale_id, payload, attempt_count, tweet_text, html_path, frames_dir, video_path, media_id, media_uploaded_at, metadata_json, capture_fps, status
                  FROM sales
                  WHERE status IN ('queued','fetching_html','capturing_frames','rendering_video','uploading_media','posting')
                    AND (next_attempt_at IS NULL OR next_attempt_at <= ?)
@@ -132,6 +132,7 @@ export class SqliteSaleRepository implements SaleRepository {
                   frames_dir?: string | null;
                   video_path?: string | null;
                   media_id?: string | null;
+                  media_uploaded_at?: number | null;
                   metadata_json?: string | null;
                   status?: string;
                   capture_fps?: number | null;
@@ -160,6 +161,9 @@ export class SqliteSaleRepository implements SaleRepository {
                 framesDir: row.frames_dir,
                 videoPath: row.video_path,
                 mediaId: row.media_id,
+                mediaUploadedAt: row.media_uploaded_at
+                    ? Number(row.media_uploaded_at)
+                    : null,
                 metadataJson: row.metadata_json,
                 captureFps: row.capture_fps,
             },
@@ -179,10 +183,14 @@ export class SqliteSaleRepository implements SaleRepository {
         ).run(postedAt, tweetId, tweetText, saleId);
     }
 
-    requeueAfterRateLimit(saleId: string): void {
+    requeueAfterRateLimit(saleId: string, nextAttemptAt?: number): void {
         db.prepare(
-            `UPDATE sales SET posting_at=NULL, next_attempt_at=NULL WHERE sale_id=?`,
-        ).run(saleId);
+            `UPDATE sales
+             SET posting_at=NULL,
+                 next_attempt_at=?,
+                 attempt_count=COALESCE(attempt_count,0)+1
+             WHERE sale_id=?`,
+        ).run(nextAttemptAt ?? null, saleId);
     }
 
     scheduleRetry(saleId: string, nextAttemptAt: number): void {
@@ -219,11 +227,22 @@ export class SqliteSaleRepository implements SaleRepository {
         );
     }
 
-    setMediaId(saleId: string, mediaId: string): void {
-        db.prepare(`UPDATE sales SET media_id=? WHERE sale_id=?`).run(
-            mediaId,
-            saleId,
-        );
+    setMediaId(saleId: string, mediaId: string, uploadedAt: number): void {
+        db.prepare(
+            `UPDATE sales SET media_id=?, media_uploaded_at=? WHERE sale_id=?`,
+        ).run(mediaId, uploadedAt, saleId);
+    }
+
+    clearMediaUpload(saleId: string): void {
+        db.prepare(
+            `UPDATE sales
+             SET media_id=NULL,
+                 media_uploaded_at=NULL,
+                 status='queued',
+                 posting_at=NULL,
+                 next_attempt_at=NULL
+             WHERE sale_id=?`,
+        ).run(saleId);
     }
 
     setMetadataJson(saleId: string, metadataJson: string): void {
@@ -243,7 +262,7 @@ export class SqliteSaleRepository implements SaleRepository {
     listStalePosting(cutoff: number): QueuedSale[] {
         const rows = db
             .prepare(
-                `SELECT sale_id, payload, attempt_count, tweet_text, metadata_json FROM sales WHERE status='posting' AND posting_at < ?`,
+                `SELECT sale_id, payload, attempt_count, tweet_text, metadata_json, media_id, media_uploaded_at FROM sales WHERE status='posting' AND posting_at < ?`,
             )
             .all(cutoff) as
             | {
@@ -252,13 +271,21 @@ export class SqliteSaleRepository implements SaleRepository {
                   attempt_count?: number;
                   tweet_text?: string;
                   metadata_json?: string | null;
+                  media_id?: string | null;
+                  media_uploaded_at?: number | null;
               }[]
             | [];
         return rows.map((row) => ({
             sale: deserializeSale(row.payload),
             attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
             tweetText: row.tweet_text,
-            artifacts: { metadataJson: row.metadata_json },
+            artifacts: {
+                metadataJson: row.metadata_json,
+                mediaId: row.media_id,
+                mediaUploadedAt: row.media_uploaded_at
+                    ? Number(row.media_uploaded_at)
+                    : null,
+            },
         }));
     }
 

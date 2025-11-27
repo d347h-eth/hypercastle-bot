@@ -76,24 +76,27 @@ export class PostingWorkflow {
                 sale.orderSide,
             );
             // 5) Upload media
-            const mediaId = await this.ensureMediaUpload(
-                sale,
-                videoPath,
-                queued.artifacts?.mediaId,
-            );
+        const mediaId = await this.ensureMediaUpload(
+            sale,
+            videoPath,
+            queued.artifacts?.mediaId,
+            queued.artifacts?.mediaUploadedAt ?? undefined,
+        );
             // 6) Post
             const tweet = await this.deps.publisher.post(text.trim(), [
                 mediaId,
             ]);
             this.deps.repo.markPosted(sale.id, tweet.id, tweet.text, now());
+            logger.info("Sale posted", {
+                saleId: sale.id,
+                tweetId: tweet.id,
+                mediaId,
+            });
             // await this.cleanupArtifacts(root);
             return "posted";
         } catch (e) {
-            if (e instanceof RateLimitExceededError) {
-                this.deps.repo.requeueAfterRateLimit(sale.id);
-                return "deferred";
-            }
-            // defer to caller for backoff scheduling
+            // Defer rate-limit and transient handling to the caller so we can schedule
+            // retries based on response headers/reset windows.
             throw e;
         }
     }
@@ -171,14 +174,40 @@ export class PostingWorkflow {
         sale: Sale,
         videoPath: string,
         existing?: string | null,
+        uploadedAt?: number | null,
     ): Promise<string> {
-        if (existing) return existing;
+        const expiresAt = uploadedAt ? uploadedAt + 24 * 3600 : null;
+        if (existing && expiresAt && now() < expiresAt) {
+            logger.debug("Reusing fresh media upload", {
+                saleId: sale.id,
+                mediaId: existing,
+                uploadedAt,
+                expiresAt,
+            });
+            return existing;
+        }
+        if (existing) {
+            // Expired or missing timestamp; clear to force fresh upload.
+            this.deps.repo.clearMediaUpload(sale.id);
+            logger.info("Media upload expired; reuploading", {
+                saleId: sale.id,
+                mediaId: existing,
+                uploadedAt,
+                expiresAt,
+            });
+        }
         this.deps.repo.updateStatus(sale.id, "uploading_media");
         const mediaId = await this.deps.publisher.uploadMedia(
             videoPath,
             "video/mp4",
         );
-        this.deps.repo.setMediaId(sale.id, mediaId);
+        const uploadedAtTs = now();
+        this.deps.repo.setMediaId(sale.id, mediaId, uploadedAtTs);
+        logger.info("Media uploaded", {
+            saleId: sale.id,
+            mediaId,
+            uploadedAt: uploadedAtTs,
+        });
         return mediaId;
     }
 

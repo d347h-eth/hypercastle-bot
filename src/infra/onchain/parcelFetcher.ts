@@ -196,7 +196,7 @@ async function resolveVersion(
         address: TERRAFORMS_ADDRESS,
         slot,
     });
-    const value = stored ? hexToBigInt(stored) : 0n;
+    const value = stored ? BigInt(stored) : 0n;
     return { value, source: "live" };
 }
 
@@ -251,7 +251,7 @@ async function resolveStatus(
         functionName: "tokenToStatus",
         args: [tokenId],
     });
-    return statusFromChain(value as bigint);
+    return statusFromChain(BigInt(value));
 }
 
 async function resolveCanvas(

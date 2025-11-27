@@ -16,11 +16,9 @@ export interface Config {
     salesApiKey: string;
     salesCollectionAddress: string;
     pollIntervalMs: number;
+    debugVerbose: boolean;
 
     dbPath: string;
-
-    rateMaxPerDay: number;
-    rateResetHourUtc: number; // 0-23
 
     xAuthMode: AuthMode;
     x: {
@@ -42,11 +40,9 @@ export const config: Config = {
     salesApiKey: process.env.SALES_API_KEY || "",
     salesCollectionAddress: process.env.SALES_COLLECTION_ADDRESS || "",
     pollIntervalMs: num("POLL_INTERVAL_MS", 30_000),
+    debugVerbose: (process.env.DEBUG_VERBOSE || "false")!.toLowerCase() === "true",
 
     dbPath: process.env.DB_PATH || "./data/bot.sqlite.db",
-
-    rateMaxPerDay: num("RATE_LIMIT_MAX_PER_DAY", 17),
-    rateResetHourUtc: num("RATE_LIMIT_RESET_HOUR_UTC", 0),
 
     xAuthMode: "oauth1",
     x: {

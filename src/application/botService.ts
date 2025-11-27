@@ -1,7 +1,6 @@
 import { SalesFeedPort } from "../domain/ports/salesFeed.js";
 import { SaleRepository } from "../domain/ports/saleRepository.js";
-import { RateLimiter } from "../domain/ports/rateLimiter.js";
-import { SocialPublisher } from "../domain/ports/socialPublisher.js";
+import { SocialPublisher, RateLimitInfo } from "../domain/ports/socialPublisher.js";
 import { RateLimitExceededError } from "../domain/errors.js";
 import { formatPrice } from "./tweetFormatter.js";
 import { computeBackoffSeconds } from "./backoff.js";
@@ -25,7 +24,6 @@ export class BotService {
         private readonly deps: {
             feed: SalesFeedPort;
             repo: SaleRepository;
-            rateLimiter: RateLimiter;
             publisher: SocialPublisher;
             config: BotConfig;
         },
@@ -92,7 +90,6 @@ export class BotService {
                     found.text,
                     unix(),
                 );
-                this.deps.rateLimiter.increment();
                 logger.info("Recovered posted sale", {
                     saleId: sale.id,
                     tweetId: found.id,
@@ -114,8 +111,11 @@ export class BotService {
             const newCount = this.deps.repo.enqueueNew(feed, now);
             if (newCount > 0) {
                 logger.info("New sales enqueued", { count: newCount });
+            } else {
+                logger.info("No new sales", { fetched: feed.length });
             }
 
+            await this.syncRemoteRateLimit();
             await this.postAvailable(now);
             this.pruneIfNeeded(now);
         } finally {
@@ -124,26 +124,58 @@ export class BotService {
     }
 
     private async postAvailable(now: number): Promise<void> {
-        const usage = this.deps.rateLimiter.getUsage();
-        let remaining = Math.max(0, usage.limit - usage.used);
-        if (remaining <= 0) return;
-
-        while (remaining > 0) {
+        while (true) {
             const queued = this.deps.repo.claimNextReady(unix());
             if (!queued) break;
             try {
-                const res = await this.workflow.process(queued);
-                if (res === "posted") {
-                    this.deps.rateLimiter.increment();
-                    remaining -= 1;
-                } else {
-                    break;
-                }
+                const rateInfo = await this.deps.publisher.checkRateLimit();
+                if (
+                    rateInfo &&
+                    rateInfo.remaining !== undefined &&
+                    rateInfo.remaining <= 1
+                ) {
+                const next = computeRateReset(
+                    rateInfo,
+                    this.deps.config.pollIntervalMs,
+                    queued.attemptCount,
+                );
+                this.deps.repo.requeueAfterRateLimit(queued.sale.id, next);
+                logger.warn("Remote rate limit reached; deferring sale", {
+                    saleId: queued.sale.id,
+                    endpoint: "post",
+                    limit: rateInfo.limit,
+                    remaining: rateInfo.remaining,
+                    resetAt: rateInfo.reset,
+                    nextAttemptAt: next,
+                    attemptCount: queued.attemptCount,
+                    waitSec: next - unix(),
+                });
+                break;
+            }
+            const res = await this.workflow.process(queued);
+            if (res !== "posted") break;
             } catch (e) {
                 if (e instanceof RateLimitExceededError) {
-                    this.deps.repo.requeueAfterRateLimit(queued.sale.id);
-                    this.deps.rateLimiter.exhaustUntilReset();
-                    logger.warn("Rate limited; deferring until window reset");
+                    const info: RateLimitInfo = {
+                        reset: e.resetAt,
+                        remaining: e.remaining,
+                        limit: e.limit,
+                    };
+                    const next = computeRateReset(
+                        info,
+                        this.deps.config.pollIntervalMs,
+                        queued.attemptCount,
+                    );
+                    this.deps.repo.requeueAfterRateLimit(queued.sale.id, next);
+                    logger.warn("Rate limited; deferring until window reset", {
+                        endpoint: "post",
+                        limit: info.limit,
+                        remaining: info.remaining,
+                        resetAt: info.reset,
+                        nextAttemptAt: next,
+                        attemptCount: queued.attemptCount + 1,
+                        waitSec: next - unix(),
+                    });
                     break;
                 }
                 const delaySec = computeBackoffSeconds(queued.attemptCount);
@@ -164,8 +196,54 @@ export class BotService {
         const minInterval = this.deps.config.pruneIntervalHours * 3600;
         this.deps.repo.pruneOld(cutoff, now, minInterval);
     }
+
+    private async syncRemoteRateLimit(): Promise<void> {
+        const info = await this.deps.publisher.checkRateLimit();
+        if (!info) return;
+        if (info.remaining !== undefined && info.remaining <= 1) {
+            const next = computeRateReset(
+                info,
+                this.deps.config.pollIntervalMs,
+                0,
+            );
+            logger.warn("Remote rate limit active on startup; deferring posts", {
+                endpoint: "post",
+                limit: info.limit,
+                remaining: info.remaining,
+                resetAt: next,
+                nextAttemptAt: next,
+                waitSec: next - unix(),
+            });
+        } else {
+            logger.info("Remote rate check on startup", {
+                endpoint: "post",
+                remaining: info.remaining,
+                limit: info.limit,
+                resetAt: info.reset,
+            });
+        }
+    }
 }
 
 function unix(): number {
     return Math.floor(Date.now() / 1000);
+}
+
+function computeRateReset(
+    info: RateLimitInfo,
+    fallbackDelayMs: number,
+    attempts = 0,
+): number {
+    const now = unix();
+    const buffer = 5; // seconds after reset to re-enter
+    const baseDelay = Math.min(Math.max(1, Math.pow(2, attempts)), 7200); // cap ~2h
+    if (info.reset && info.reset > now) {
+        const target = info.reset + buffer;
+        return Math.max(now + baseDelay, target);
+    }
+    const slot =
+        info.limit && info.limit > 0
+            ? Math.ceil(86400 / info.limit)
+            : Math.ceil(fallbackDelayMs / 1000);
+    return now + Math.max(baseDelay, slot);
 }

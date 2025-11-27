@@ -36,14 +36,13 @@ Important:
 
 -   Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
 -   `TWEET_TEMPLATE` defaults to a multi-line enriched template with Mode/Chroma/Zone/Biome/Antenna.
--   On X 429, posting halts until the next daily reset (no retries until then).
+-   Rate limits: a controller inside the X publisher parses response headers from post/upload calls, tracks reset/remaining with a reserved slot (never uses the 17th), and backs off to the header-supplied reset with exponential jitter. 429s defer to the next available slot. Media uploads track `media_uploaded_at` and will re-upload after 24h.
 -   Set `USE_FAKE_PUBLISHER=true` to log locally instead of posting to X; default uses the real X publisher (requires creds).
+-   For verbose troubleshooting (including raw X rate headers per call), set `DEBUG_VERBOSE=true`
 
 Notes:
 
 -   OAuth 1.0a user tokens (X_APP_KEY/SECRET + X_ACCESS_TOKEN/SECRET) are the simplest for posting.
--   `RATE_LIMIT_MAX_PER_DAY` is enforced locally; set to your X free-tier daily allowance.
--   `RATE_LIMIT_RESET_HOUR_UTC` controls when the daily window resets (default 00:00 UTC).
 -   For timeline verification, provide either `X_USER_ID` or `X_USERNAME`.
 
 ## Development
