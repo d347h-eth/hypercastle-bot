@@ -7,6 +7,7 @@ import { computeBackoffSeconds } from "./backoff.js";
 import { logger } from "../logger.js";
 import { PostingWorkflow } from "./workflow.js";
 import { formatEnrichedText } from "../infra/http/tokenMetadata.js";
+import { toIso } from "../util/time.js";
 
 export interface BotConfig {
     pollIntervalMs: number;
@@ -110,12 +111,21 @@ export class BotService {
             const now = unix();
             const newCount = this.deps.repo.enqueueNew(feed, now);
             if (newCount > 0) {
-                logger.info("New sales enqueued", { count: newCount });
+                logger.info("Fetched recent sales (Reservoir)", {
+                    component: "BotService",
+                    action: "pollOnce",
+                    fetched: feed.length,
+                    enqueued: newCount,
+                });
             } else {
-                logger.info("No new sales", { fetched: feed.length });
+                logger.info("Fetched recent sales (Reservoir)", {
+                    component: "BotService",
+                    action: "pollOnce",
+                    fetched: feed.length,
+                    enqueued: 0,
+                });
             }
 
-            await this.syncRemoteRateLimit();
             await this.postAvailable(now);
             this.pruneIfNeeded(now);
         } finally {
@@ -134,26 +144,30 @@ export class BotService {
                     rateInfo.remaining !== undefined &&
                     rateInfo.remaining <= 1
                 ) {
-                const next = computeRateReset(
-                    rateInfo,
-                    this.deps.config.pollIntervalMs,
-                    queued.attemptCount,
-                );
-                this.deps.repo.requeueAfterRateLimit(queued.sale.id, next);
-                logger.warn("Remote rate limit reached; deferring sale", {
-                    saleId: queued.sale.id,
-                    endpoint: "post",
-                    limit: rateInfo.limit,
-                    remaining: rateInfo.remaining,
-                    resetAt: rateInfo.reset,
-                    nextAttemptAt: next,
-                    attemptCount: queued.attemptCount,
-                    waitSec: next - unix(),
-                });
-                break;
-            }
-            const res = await this.workflow.process(queued);
-            if (res !== "posted") break;
+                    const next = computeRateReset(
+                        rateInfo,
+                        this.deps.config.pollIntervalMs,
+                        queued.attemptCount,
+                    );
+                    this.deps.repo.requeueAfterRateLimit(queued.sale.id, next);
+                    logger.warn("Remote rate limit reached; deferring sale", {
+                        component: "BotService",
+                        action: "postAvailable",
+                        saleId: queued.sale.id,
+                        endpoint: "post",
+                        limit: rateInfo.limit,
+                        remaining: rateInfo.remaining,
+                        resetAt: rateInfo.reset,
+                        resetAtIso: toIso(rateInfo.reset),
+                        nextAttemptAt: next,
+                        nextAttemptAtIso: toIso(next),
+                        attemptCount: queued.attemptCount,
+                        waitSec: next - unix(),
+                    });
+                    break;
+                }
+                const res = await this.workflow.process(queued);
+                if (res !== "posted") break;
             } catch (e) {
                 if (e instanceof RateLimitExceededError) {
                     const info: RateLimitInfo = {
@@ -168,11 +182,15 @@ export class BotService {
                     );
                     this.deps.repo.requeueAfterRateLimit(queued.sale.id, next);
                     logger.warn("Rate limited; deferring until window reset", {
+                        component: "BotService",
+                        action: "postAvailable",
                         endpoint: "post",
                         limit: info.limit,
                         remaining: info.remaining,
                         resetAt: info.reset,
+                        resetAtIso: toIso(info.reset),
                         nextAttemptAt: next,
+                        nextAttemptAtIso: toIso(next),
                         attemptCount: queued.attemptCount + 1,
                         waitSec: next - unix(),
                     });
@@ -182,6 +200,8 @@ export class BotService {
                 const next = unix() + delaySec;
                 this.deps.repo.scheduleRetry(queued.sale.id, next);
                 logger.warn("Tweet failed; scheduled retry", {
+                    component: "BotService",
+                    action: "postAvailable",
                     saleId: queued.sale.id,
                     inSec: delaySec,
                     error: String(e),
@@ -195,33 +215,6 @@ export class BotService {
         const cutoff = now - this.deps.config.pruneDays * 24 * 3600;
         const minInterval = this.deps.config.pruneIntervalHours * 3600;
         this.deps.repo.pruneOld(cutoff, now, minInterval);
-    }
-
-    private async syncRemoteRateLimit(): Promise<void> {
-        const info = await this.deps.publisher.checkRateLimit();
-        if (!info) return;
-        if (info.remaining !== undefined && info.remaining <= 1) {
-            const next = computeRateReset(
-                info,
-                this.deps.config.pollIntervalMs,
-                0,
-            );
-            logger.warn("Remote rate limit active on startup; deferring posts", {
-                endpoint: "post",
-                limit: info.limit,
-                remaining: info.remaining,
-                resetAt: next,
-                nextAttemptAt: next,
-                waitSec: next - unix(),
-            });
-        } else {
-            logger.info("Remote rate check on startup", {
-                endpoint: "post",
-                remaining: info.remaining,
-                limit: info.limit,
-                resetAt: info.reset,
-            });
-        }
     }
 }
 

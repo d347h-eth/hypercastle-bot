@@ -46,19 +46,17 @@ describe("RateControl", () => {
 
     it("onError without headers sets remaining to 0 and adds slot-sized recovery delay", () => {
         const rc = new RateControl();
-        const state = rc.onError("me", null);
+        const state = rc.onError("post", null);
         expect(state.remaining).toBe(0);
         const delta = (state.reset ?? 0) - Math.floor(Date.now() / 1000);
         expect(delta).toBeGreaterThan(0);
-        expect(delta).toBeGreaterThanOrEqual(Math.ceil(86400 / 25) - 2);
+        expect(delta).toBeGreaterThanOrEqual(Math.ceil(86400 / 17) - 2);
     });
 
     it("tracks endpoints independently", () => {
         const rc = new RateControl();
         rc.onSuccess("post", { limit: 17, remaining: 10, reset: NOW + 50 });
-        rc.onSuccess("me", { limit: 25, remaining: 20, reset: NOW + 100 });
         expect(rc.snapshot("post")?.remaining).toBe(10);
-        expect(rc.snapshot("me")?.remaining).toBe(20);
     });
 
     it("prefers userDay bucket when parsing headers", () => {

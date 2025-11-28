@@ -1,14 +1,14 @@
 import { db } from "../../db.js";
 import { RateLimitExceededError } from "../../domain/errors.js";
-import { RateLimitInfo } from "../../domain/ports/socialPublisher.js";
 import { config } from "../../config.js";
 import { logger } from "../../logger.js";
+import { shallowDiff } from "../../util/diff.js";
+import { toIso } from "../../util/time.js";
 
-type Endpoint = "post" | "me";
+type Endpoint = "post";
 
 const META_KEYS: Record<Endpoint, string> = {
     post: "rate_state_post",
-    me: "rate_state_me",
 };
 
 const ENDPOINT_CONFIG: Record<Endpoint, { limit: number; reserve: number }> = {
@@ -16,20 +16,14 @@ const ENDPOINT_CONFIG: Record<Endpoint, { limit: number; reserve: number }> = {
         limit: 17,
         reserve: 1, // never spend the last slot
     },
-    me: {
-        limit: 25,
-        reserve: 1,
-    },
 };
 
 const RESET_BUFFER_SEC = 60;
 const SLOT_SECONDS: Record<Endpoint, number> = {
     post: Math.ceil(86400 / ENDPOINT_CONFIG.post.limit),
-    me: Math.ceil(86400 / ENDPOINT_CONFIG.me.limit),
 };
 const FALLBACK_RECOVERY_SEC: Record<Endpoint, number> = {
     post: SLOT_SECONDS.post,
-    me: SLOT_SECONDS.me,
 };
 
 export interface RateState {
@@ -37,6 +31,7 @@ export interface RateState {
     remaining?: number;
     reset?: number;
     lastSpentAt?: number;
+    storedAt?: number;
 }
 
 export class RateControl {
@@ -61,17 +56,22 @@ export class RateControl {
                     remaining,
                     reset: fallbackReset,
                     lastSpentAt: lastSpent,
+                    storedAt: now,
                 });
             }
             logger.warn("[Rate] Guard blocked", {
+                component: "RateControl",
+                action: "guard",
                 endpoint,
                 remaining,
                 limit,
                 reserve: cfg.reserve,
                 resetAt: fallbackReset,
+                resetAtIso: toIso(fallbackReset),
                 waitSec: fallbackReset - now,
                 syntheticReset: !state.reset || state.reset <= now,
                 lastSpentAt: lastSpent,
+                lastSpentAtIso: toIso(lastSpent),
             });
             throw new RateLimitExceededError(
                 `${endpoint} rate limited`,
@@ -82,10 +82,15 @@ export class RateControl {
         }
         if (config.debugVerbose) {
             logger.debug("[Rate] Guard allow", {
+                component: "RateControl",
+                action: "guard",
                 endpoint,
                 remaining,
                 limit,
                 reset: state.reset,
+                lastSpentAt: state.lastSpentAt,
+                resetIso: toIso(state.reset),
+                lastSpentAtIso: toIso(state.lastSpentAt),
             });
         }
         return state;
@@ -102,18 +107,27 @@ export class RateControl {
                     current.reset ??
                     unix() + FALLBACK_RECOVERY_SEC[endpoint],
                 lastSpentAt: unix(),
+                storedAt: unix(),
             };
         if (parsed) {
             next.lastSpentAt = unix();
+            next.storedAt = unix();
         }
         this.save(endpoint, next);
         if (config.debugVerbose) {
             logger.debug("[Rate] Updated from success", {
+                component: "RateControl",
+                action: "onSuccess",
                 endpoint,
                 limit: next.limit ?? ENDPOINT_CONFIG[endpoint].limit,
                 remaining: next.remaining,
                 reset: next.reset,
+                resetIso: toIso(next.reset),
                 source: summarizeRate(rawRate),
+                lastSpentAt: next.lastSpentAt,
+                lastSpentAtIso: toIso(next.lastSpentAt),
+                storedAt: next.storedAt,
+                storedAtIso: toIso(next.storedAt),
             });
         }
         return next;
@@ -131,15 +145,22 @@ export class RateControl {
                     current.reset ??
                     unix() + FALLBACK_RECOVERY_SEC[endpoint],
                 lastSpentAt: unix(),
+                storedAt: unix(),
             };
         this.save(endpoint, next);
         logger.warn("[Rate] Updated from error", {
+            component: "RateControl",
+            action: "onError",
             endpoint,
             limit: next.limit ?? ENDPOINT_CONFIG[endpoint].limit,
             remaining: next.remaining,
             reset: next.reset,
+            resetIso: toIso(next.reset),
             source: summarizeRate(rawRate),
             lastSpentAt: next.lastSpentAt,
+            lastSpentAtIso: toIso(next.lastSpentAt),
+            storedAt: next.storedAt,
+            storedAtIso: toIso(next.storedAt),
         });
         return next;
     }
@@ -158,14 +179,21 @@ export class RateControl {
                 remaining: state.limit ?? cfg.limit,
                 reset: state.reset,
                 lastSpentAt: state.lastSpentAt ?? state.reset,
+                storedAt: now,
             };
-            this.save(endpoint, refreshed);
-            if (config.debugVerbose) {
-                logger.debug("[Rate] Reset passed; state refreshed", {
-                    endpoint,
-                    previous: state,
-                    refreshed,
-                });
+            const diff = shallowDiff(state as any, refreshed as any);
+            if (Object.keys(diff).length > 0) {
+                this.save(endpoint, refreshed);
+                if (config.debugVerbose) {
+                    logger.debug("[Rate] Reset passed; state refreshed", {
+                        component: "RateControl",
+                        action: "loadAndRefresh",
+                        endpoint,
+                        previous: state,
+                        refreshed,
+                        diff,
+                    });
+                }
             }
             return refreshed;
         }
@@ -210,7 +238,11 @@ function sanitize(state: RateState): RateState {
         state.lastSpentAt !== undefined && Number.isFinite(state.lastSpentAt)
             ? Number(state.lastSpentAt)
             : undefined;
-    return { limit, remaining, reset, lastSpentAt };
+    const storedAt =
+        state.storedAt !== undefined && Number.isFinite(state.storedAt)
+            ? Number(state.storedAt)
+            : undefined;
+    return { limit, remaining, reset, lastSpentAt, storedAt };
 }
 
 function decrement(state: RateState, fallbackLimit: number): RateState {
@@ -219,7 +251,13 @@ function decrement(state: RateState, fallbackLimit: number): RateState {
         state.remaining !== undefined
             ? Math.max(0, state.remaining - 1)
             : limit - 1;
-    return { limit, remaining, reset: state.reset, lastSpentAt: state.lastSpentAt };
+    return {
+        limit,
+        remaining,
+        reset: state.reset,
+        lastSpentAt: state.lastSpentAt,
+        storedAt: state.storedAt,
+    };
 }
 
 export function parseRate(raw: any): RateState | null {

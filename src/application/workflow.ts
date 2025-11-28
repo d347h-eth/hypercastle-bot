@@ -16,6 +16,7 @@ import {
 } from "../infra/http/tokenMetadata.js";
 import { formatPrice } from "./tweetFormatter.js";
 import { logger } from "../logger.js";
+import { toIso } from "../util/time.js";
 
 export interface WorkflowDeps {
     repo: SaleRepository;
@@ -82,16 +83,18 @@ export class PostingWorkflow {
             queued.artifacts?.mediaId,
             queued.artifacts?.mediaUploadedAt ?? undefined,
         );
-            // 6) Post
-            const tweet = await this.deps.publisher.post(text.trim(), [
-                mediaId,
-            ]);
-            this.deps.repo.markPosted(sale.id, tweet.id, tweet.text, now());
-            logger.info("Sale posted", {
-                saleId: sale.id,
-                tweetId: tweet.id,
-                mediaId,
-            });
+        // 6) Post
+        const tweet = await this.deps.publisher.post(text.trim(), [
+            mediaId,
+        ]);
+        this.deps.repo.markPosted(sale.id, tweet.id, tweet.text, now());
+        logger.info("Sale posted", {
+            component: "PostingWorkflow",
+            action: "process",
+            saleId: sale.id,
+            tweetId: tweet.id,
+            mediaId,
+        });
             // await this.cleanupArtifacts(root);
             return "posted";
         } catch (e) {
@@ -179,10 +182,14 @@ export class PostingWorkflow {
         const expiresAt = uploadedAt ? uploadedAt + 24 * 3600 : null;
         if (existing && expiresAt && now() < expiresAt) {
             logger.debug("Reusing fresh media upload", {
+                component: "PostingWorkflow",
+                action: "ensureMediaUpload",
                 saleId: sale.id,
                 mediaId: existing,
                 uploadedAt,
+                uploadedAtIso: toIso(uploadedAt),
                 expiresAt,
+                expiresAtIso: expiresAt ? toIso(expiresAt) : undefined,
             });
             return existing;
         }
@@ -190,10 +197,14 @@ export class PostingWorkflow {
             // Expired or missing timestamp; clear to force fresh upload.
             this.deps.repo.clearMediaUpload(sale.id);
             logger.info("Media upload expired; reuploading", {
+                component: "PostingWorkflow",
+                action: "ensureMediaUpload",
                 saleId: sale.id,
                 mediaId: existing,
                 uploadedAt,
+                uploadedAtIso: toIso(uploadedAt ?? undefined),
                 expiresAt,
+                expiresAtIso: expiresAt ? toIso(expiresAt) : undefined,
             });
         }
         this.deps.repo.updateStatus(sale.id, "uploading_media");
@@ -204,9 +215,12 @@ export class PostingWorkflow {
         const uploadedAtTs = now();
         this.deps.repo.setMediaId(sale.id, mediaId, uploadedAtTs);
         logger.info("Media uploaded", {
+            component: "PostingWorkflow",
+            action: "ensureMediaUpload",
             saleId: sale.id,
             mediaId,
             uploadedAt: uploadedAtTs,
+            uploadedAtIso: toIso(uploadedAtTs),
         });
         return mediaId;
     }
