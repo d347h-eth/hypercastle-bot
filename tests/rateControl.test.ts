@@ -145,5 +145,40 @@ describe("RateControl", () => {
             expect(parseRate(null)).toBeNull();
             expect(parseRate({})).toBeNull();
         });
+
+        it("prioritizes x-user-limit-24hour over generic x-rate-limit", () => {
+            const res = {
+                headers: {
+                    "x-rate-limit-limit": "1080000",
+                    "x-rate-limit-remaining": "1079999",
+                    "x-rate-limit-reset": "1764454959",
+                    "x-user-limit-24hour-limit": "17",
+                    "x-user-limit-24hour-remaining": "0",
+                    "x-user-limit-24hour-reset": "1764458177"
+                }
+            };
+            const rate = parseRate(res);
+            expect(rate).toEqual({ limit: 17, remaining: 0, reset: 1764458177 });
+        });
+    });
+
+    it("persists 24h limit priorities to DB", () => {
+        const rc = new RateControl();
+        const res = {
+            headers: {
+                "x-rate-limit-limit": "1000000",
+                "x-user-limit-24hour-limit": "17",
+                "x-user-limit-24hour-remaining": "5",
+                "x-user-limit-24hour-reset": "1764458177"
+            }
+        };
+        
+        rc.onSuccess("post", res);
+        
+        // snapshot loads from DB
+        const state = rc.snapshot("post");
+        expect(state.limit).toBe(17);
+        expect(state.remaining).toBe(5);
+        expect(state.reset).toBe(1764458177);
     });
 });

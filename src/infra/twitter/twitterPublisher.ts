@@ -49,6 +49,8 @@ export class TwitterPublisher implements SocialPublisher {
                 { fullResponse: true },
             );
             
+            this.logRawResponse("success", res);
+
             const rateInfo = this.rates.onSuccess("post", res);
             
             logger.info("[X] Tweet posted", {
@@ -60,6 +62,8 @@ export class TwitterPublisher implements SocialPublisher {
             });
             return { id: res.data.id, text: text };
         } catch (e) {
+            this.logRawResponse("error", e);
+
             const info = this.rates.onError("post", e);
             const resetAt = info.reset;
 
@@ -88,6 +92,25 @@ export class TwitterPublisher implements SocialPublisher {
                 resetAt,
             });
             throw e;
+        }
+    }
+
+    private logRawResponse(stage: string, obj: any) {
+        if (!config.debugVerbose) return;
+        try {
+            const headers = obj?.response?.headers || obj?.headers;
+            const data = obj?.data || obj?.errors || (obj as any)?.error;
+            const code = obj?.code || obj?.response?.statusCode || obj?.response?.status;
+            logger.debug("[X] Raw API Dump", {
+                component: "TwitterPublisher",
+                action: "logRawResponse",
+                stage,
+                code,
+                headers,
+                data,
+            });
+        } catch (err) {
+            logger.warn("Failed to log raw response", { error: String(err) });
         }
     }
 

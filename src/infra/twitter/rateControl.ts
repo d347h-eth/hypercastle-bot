@@ -2,7 +2,6 @@ import { db } from "../../db.js";
 import { RateLimitExceededError } from "../../domain/errors.js";
 import { config } from "../../config.js";
 import { logger } from "../../logger.js";
-import { shallowDiff } from "../../util/diff.js";
 import { toIso } from "../../util/time.js";
 
 type Endpoint = "post";
@@ -261,7 +260,7 @@ function decrement(state: RateState, fallbackLimit: number): RateState {
 
 export function parseRate(obj: any): RateState | null {
     if (!obj) return null;
-    
+
     // 1. Check for headers (standard X API location)
     const headers = 
         obj.response?.headers || 
@@ -275,17 +274,32 @@ export function parseRate(obj: any): RateState | null {
             headers.get?.(key) ?? 
             headers.get?.(key.toLowerCase?.());
 
-        const limit = get("x-rate-limit-limit");
-        const remaining = get("x-rate-limit-remaining");
-        const reset = get("x-rate-limit-reset");
+        // Helper to extract a set of headers
+        const extract = (prefix: string) => {
+            const limit = get(`${prefix}-limit`);
+            const remaining = get(`${prefix}-remaining`);
+            const reset = get(`${prefix}-reset`);
+            if (limit !== undefined && remaining !== undefined && reset !== undefined) {
+                return sanitize({
+                    limit: Number(limit),
+                    remaining: Number(remaining),
+                    reset: Number(reset)
+                });
+            }
+            return null;
+        };
 
-        if (limit !== undefined && remaining !== undefined && reset !== undefined) {
-             return sanitize({
-                limit: Number(limit),
-                remaining: Number(remaining),
-                reset: Number(reset)
-            });
-        }
+        // Priority 1: User 24h limit (most specific for posting)
+        const user24 = extract("x-user-limit-24hour");
+        if (user24) return user24;
+
+        // Priority 2: App 24h limit
+        const app24 = extract("x-app-limit-24hour");
+        if (app24) return app24;
+
+        // Priority 3: Standard generic limit
+        const standard = extract("x-rate-limit");
+        if (standard) return standard;
     }
 
     // 2. Check structure with nested 'rateLimit' or 'rateLimits'
