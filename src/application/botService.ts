@@ -11,7 +11,6 @@ import { toIso } from "../util/time.js";
 
 export interface BotConfig {
     pollIntervalMs: number;
-    tweetTemplate: string;
     stalePostingSeconds: number;
     pruneDays: number;
     pruneIntervalHours: number;

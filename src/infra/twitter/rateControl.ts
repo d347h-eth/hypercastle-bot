@@ -111,7 +111,7 @@ export class RateControl {
                 action: "onSuccess",
                 endpoint,
                 info,
-                next,
+                next: formatStateForLog(next),
             });
         }
         return next;
@@ -149,7 +149,7 @@ export class RateControl {
             action: "onError",
             endpoint,
             info,
-            next,
+            next: formatStateForLog(next),
             error: String(error),
         });
         return next;
@@ -182,8 +182,8 @@ export class RateControl {
                         component: "RateControl",
                         action: "loadAndRefresh",
                         endpoint,
-                        previous: state,
-                        refreshed,
+                        previous: formatStateForLog(state),
+                        refreshed: formatStateForLog(refreshed),
                     });
                 }
             }
@@ -211,6 +211,15 @@ export class RateControl {
             JSON.stringify(state),
         );
     }
+}
+
+function formatStateForLog(state: RateState) {
+    return {
+        ...state,
+        resetIso: toIso(state.reset),
+        lastSpentAtIso: toIso(state.lastSpentAt),
+        storedAtIso: toIso(state.storedAt),
+    };
 }
 
 function sanitize(state: RateState): RateState {
@@ -266,9 +275,9 @@ export function parseRate(obj: any): RateState | null {
             headers.get?.(key) ?? 
             headers.get?.(key.toLowerCase?.());
 
-        const limit = get("x-ratelimit-limit");
-        const remaining = get("x-ratelimit-remaining");
-        const reset = get("x-ratelimit-reset");
+        const limit = get("x-rate-limit-limit");
+        const remaining = get("x-rate-limit-remaining");
+        const reset = get("x-rate-limit-reset");
 
         if (limit !== undefined && remaining !== undefined && reset !== undefined) {
              return sanitize({

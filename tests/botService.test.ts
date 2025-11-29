@@ -12,7 +12,6 @@ import { RateLimitExceededError } from "../src/domain/errors.js";
 
 const config: BotConfig = {
     pollIntervalMs: 10_000,
-    tweetTemplate: "template",
     stalePostingSeconds: 120,
     pruneDays: 30,
     pruneIntervalHours: 6,

@@ -116,9 +116,9 @@ describe("RateControl", () => {
         it("parses x-rate-limit headers from response object", () => {
             const res = {
                 headers: {
-                    "x-ratelimit-limit": "50",
-                    "x-ratelimit-remaining": "49",
-                    "x-ratelimit-reset": "1234567890"
+                    "x-rate-limit-limit": "50",
+                    "x-rate-limit-remaining": "49",
+                    "x-rate-limit-reset": "1234567890"
                 }
             };
             const rate = parseRate(res);

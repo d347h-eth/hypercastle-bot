@@ -18,7 +18,6 @@ This document captures the full project context: requirements, behavior, data mo
 -   `SALES_COLLECTION_ADDRESS` — contract address query param.
 -   `POLL_INTERVAL_MS` — poll cadence.
 -   `DB_PATH` — SQLite path (default `./data/bot.sqlite.db`).
--   `TWEET_TEMPLATE` — default multi-line: `"#{tokenId} | {name} | {price} {symbol} (take-{orderSide})\n{Mode} {Chroma}{Antenna}\n{Zone} B{Biome}"`.
 -   `USE_FAKE_PUBLISHER` — set to `true` to log locally instead of posting to X (default: false).
 -   X creds (for real posting): `X_APP_KEY`, `X_APP_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_SECRET`, optional `X_USER_ID`/`X_USERNAME`.
 
@@ -37,17 +36,19 @@ This document captures the full project context: requirements, behavior, data mo
     4. `fetch_metadata`: Reservoir `/tokens/v7` to enrich Mode/Chroma/Zone/Biome/Antenna (stored as JSON).
     5. `uploading_media`: X chunked upload of video; `media_id` + `media_uploaded_at` persisted (re-upload if older than 24h).
     6. `posting`: post enriched multi-line text with `media_ids`; on success mark posted, increment rate usage, clean artifacts.
--   **429:** read `x-ratelimit-*` headers, set `next_attempt_at` to the reset (with buffer), record remote cooldown, exhaust local usage, and halt until reset.
+-   **429:** read `x-rate-limit-*` headers, set `next_attempt_at` to the reset (with buffer), record remote cooldown, exhaust local usage, and halt until reset.
 -   **Non-429 errors:** exponential backoff (1m → 2m → … → 30m) via `next_attempt_at`, attempt_count++.
 -   **Recovery:** on startup, find `posting` older than `stalePostingSeconds` (120s), compare against recent timeline (tokenId + price + symbol + side) to mark posted or requeue.
 -   **Pruning:** delete posted/failed/seen older than 30 days, at most every 6h.
 
 ### Rate limiting
 
--   A single rate controller (inside `TwitterPublisher`) owns all X rate logic for posting. It persists header-derived state in `meta` (`rate_state_post`) and rejects calls when `remaining` would consume the reserved slot (keeps the 17th request unused).
--   State heals after reset: if the stored `reset` has passed, remaining is restored to the limit before the next call. When headers are missing, a synthetic reset is stored using per-slot spacing (~84m for 17/day) anchored to the last spent request so the system can self-heal without new requests. `checkRateLimit` reads the stored post snapshot (no `/2/users/me` network probe) to avoid exhausting the `/me` bucket.
--   Headers are parsed with preference for the `userDay` bucket to align with free-tier caps. On success/429, state is refreshed from headers; if headers are missing, the controller cautiously decrements the stored remaining and sets a short fallback recovery window.
--   Exponential backoff for 429s starts at 1s, doubles up to 2h, and is clamped to the `x-ratelimit-reset` minus a small buffer so retries never pre-date the reset; non-rate errors still back off (1m → 2m → … → 30m).
+-   A dedicated `RateControl` component owns all X rate logic. It treats `x-rate-limit-*` response headers as the authoritative source of truth.
+-   **Guard:** It enforces a "reserve" of 1 slot (blocks when `remaining <= 1`) to ensure the account never hits "0" and risks a hard ban.
+-   **Reset:** It respects the `x-rate-limit-reset` timestamp provided by the API. The bot halts posting until this window passes.
+-   **Self-Healing (Fallback):** If headers are missing (e.g., transient error or test environment), the controller uses a "dead reckoning" fallback: it decrements the local `remaining` count and, if blocked without a known reset time, calculates a synthetic reset based on the free tier slot duration (~1.4 hours for 17 posts/day). This ensures the bot self-heals and resumes eventually without manual intervention.
+-   **Storage:** State (`limit`, `remaining`, `reset`, `lastSpentAt`) is persisted in the `meta` table so it survives restarts.
+-   **Backoff:** 429 errors trigger an immediate deferral until the `reset` time (plus a small buffer). Non-rate errors use standard exponential backoff.
 
 ## Data Model (SQLite)
 
@@ -71,15 +72,19 @@ This document captures the full project context: requirements, behavior, data mo
 
 ## Posting Template
 
-Default multi-line template:
+The tweet text is programmatically generated (`src/infra/http/tokenMetadata.ts`) to include enriched attributes:
 
 ```
-#{tokenId} | {name} | {price} {symbol} (take-{orderSide})
-{Mode} {Chroma}{Antenna}
+#{tokenId} | {name}
+{price} {symbol} (take-{orderSide})
+{Mode} {Chroma} [A]
 {Zone} B{Biome}
 ```
 
-Price uses up to 4 decimals (trim trailing zeros). `orderSide` normalized to `ask`/`bid` where possible. Antenna adds `[A]` when On. Biome prefixed with `B`.
+-   Price: trimmed to remove trailing zeros (up to 4 decimals).
+-   `[A]`: appended if Antenna is "On".
+-   `B{Biome}`: Biome number prefixed with B.
+
 
 ## Recovery Matching
 

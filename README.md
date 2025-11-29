@@ -35,8 +35,8 @@ Environment variables are documented in `.env.example`.
 Important:
 
 -   Provide `SALES_API_BASE_URL` (base only; `/sales/v6` is appended) and `SALES_COLLECTION_ADDRESS` (contract address) — used with `/sales/v6?collection=...&sortBy=time&sortDirection=desc`.
--   `TWEET_TEMPLATE` defaults to a multi-line enriched template with Mode/Chroma/Zone/Biome/Antenna.
--   Rate limits: a controller inside the X publisher parses response headers from post/upload calls, tracks reset/remaining with a reserved slot (never uses the 17th), and backs off to the header-supplied reset with exponential jitter. 429s defer to the next available slot. Media uploads track `media_uploaded_at` and will re-upload after 24h.
+-   **Rate limits:** The bot strictly respects `x-rate-limit-*` headers from the X API. It tracks `reset` and `remaining` allowances, enforcing a reserved slot (never uses the 17th request of the free tier) to avoid hard bans. If headers are missing (e.g., transient network issues), it employs a self-healing "dead reckoning" fallback that synthetically spaces out retries (~1.4h) until the limit resets.
+-   **Tweet Format:** Tweets are automatically formatted with enriched token metadata (Mode, Chroma, Zone, Biome, Antenna) fetched from Reservoir.
 -   Set `USE_FAKE_PUBLISHER=true` to log locally instead of posting to X; default uses the real X publisher (requires creds).
 -   For verbose troubleshooting (including raw X rate headers per call), set `DEBUG_VERBOSE=true`
 

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
 import { BotService } from "../src/application/botService.js";
-import { formatTweet } from "../src/application/tweetFormatter.js";
 import { Sale } from "../src/domain/models.js";
 import { SalesFeedPort } from "../src/domain/ports/salesFeed.js";
 import {
@@ -11,7 +10,6 @@ import { SocialPublisher } from "../src/domain/ports/socialPublisher.js";
 
 const config = {
     pollIntervalMs: 10_000,
-    tweetTemplate: "#{tokenId} | {name} | {price} {symbol} (take-{orderSide})", // Standard template
     stalePostingSeconds: 60,
     pruneDays: 30,
     pruneIntervalHours: 6,
@@ -58,7 +56,8 @@ const makeFeed = () => ({
 describe("BotService recovery", () => {
     it("marks stale posting as posted when matching tweet exists", async () => {
         const sale = saleFixture();
-        const expectedText = formatTweet(config.tweetTemplate, sale);
+        // Matching formatEnrichedText with no attributes. formatPrice strips trailing zeros (0.2500 -> 0.25)
+        const expectedText = `#123 | Test\n0.25 ETH (take-bid)`; 
         
         const repo = makeRepo([{ sale, attemptCount: 0 }]);
         const publisher = makePublisher([{ id: "t1", text: expectedText }]);
@@ -98,7 +97,8 @@ describe("BotService recovery", () => {
         const s1 = saleFixture("s1", "100", 1.0);
         const s2 = saleFixture("s2", "200", 2.0);
         
-        const s1Text = formatTweet(config.tweetTemplate, s1);
+        // Price 1.0 -> "1"
+        const s1Text = `#100 | Test\n1 ETH (take-bid)`;
         // s2 text is not in the timeline
 
         const repo = makeRepo([

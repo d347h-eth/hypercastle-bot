@@ -30,7 +30,6 @@ async function main() {
             : new TwitterPublisher(),
         config: {
             pollIntervalMs: config.pollIntervalMs,
-            tweetTemplate: config.tweetTemplate,
             stalePostingSeconds: 120,
             pruneDays: 30,
             pruneIntervalHours: 6,

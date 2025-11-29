@@ -30,7 +30,6 @@ export interface Config {
         username?: string;
     };
 
-    tweetTemplate: string;
     useFakePublisher: boolean;
 }
 
@@ -53,10 +52,6 @@ export const config: Config = {
         userId: process.env.X_USER_ID || undefined,
         username: process.env.X_USERNAME || undefined,
     },
-
-    tweetTemplate:
-        process.env.TWEET_TEMPLATE ||
-        "#{tokenId} | {name} | {price} {symbol} (take-{orderSide})\n{Mode} {Chroma}{Antenna}\n{Zone} B{Biome}",
 
     useFakePublisher:
         (process.env.USE_FAKE_PUBLISHER || "false").toLowerCase() === "true",
