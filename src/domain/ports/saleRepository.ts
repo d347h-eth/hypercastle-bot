@@ -4,6 +4,7 @@ export interface QueuedSale {
     sale: Sale;
     attemptCount: number;
     tweetText?: string | null;
+    nextAttemptAt?: number | null;
     artifacts?: {
         htmlPath?: string | null;
         framesDir?: string | null;
@@ -43,6 +44,6 @@ export interface SaleRepository {
 
     listStalePosting(cutoff: number): QueuedSale[];
     requeueStale(saleId: string, nextAttemptAt: number): void;
-
     pruneOld(cutoff: number, now: number, minInterval: number): void;
+    peekBacklog(limit?: number): QueuedSale[];
 }

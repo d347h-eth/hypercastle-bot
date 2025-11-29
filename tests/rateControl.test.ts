@@ -30,7 +30,7 @@ describe("RateControl", () => {
         const rc = new RateControl();
         const resetAt = Math.floor(START_TIME / 1000) + 120;
         rc.onSuccess("post", { limit: 17, remaining: 1, reset: resetAt });
-        
+
         try {
             rc.guard("post");
             expect.fail("Should have thrown RateLimitExceededError");
@@ -48,9 +48,9 @@ describe("RateControl", () => {
         // Force state to low remaining without a valid future reset
         // e.g. success call that didn't return headers, decremented to 1
         for (let i = 0; i < 16; i++) {
-             rc.onSuccess("post", null); // decrements
+            rc.onSuccess("post", null); // decrements
         }
-        
+
         // Now remaining is 1. Next guard should block.
         // Since we have no reset info, it should synthesize one: lastSpent + FALLBACK_SLOT_SEC (~84m)
         try {
@@ -61,7 +61,7 @@ describe("RateControl", () => {
             const nowSec = Math.floor(START_TIME / 1000);
             const fallbackSlot = Math.ceil(86400 / 17); // 5083
             const expectedReset = nowSec + fallbackSlot + 60; // + buffer
-            
+
             expect(err.resetAt).toBe(expectedReset);
         }
     });
@@ -75,7 +75,7 @@ describe("RateControl", () => {
         expect(() => rc.guard("post")).toThrow();
 
         // Advance time past the synthetic reset window (~1.5h)
-        vi.advanceTimersByTime(2 * 60 * 60 * 1000); 
+        vi.advanceTimersByTime(2 * 60 * 60 * 1000);
 
         // Should be allowed now and reset to full limit
         const state = rc.guard("post");
@@ -86,7 +86,7 @@ describe("RateControl", () => {
         const rc = new RateControl();
         const nowSec = Math.floor(START_TIME / 1000);
         rc.onError("post", { limit: 17, remaining: 0, reset: nowSec + 10 });
-        
+
         vi.advanceTimersByTime(11_000); // 11s later
 
         const refreshed = rc.guard("post");
@@ -97,7 +97,7 @@ describe("RateControl", () => {
         const rc = new RateControl();
         const state = rc.onError("post", null);
         expect(state.remaining).toBe(0);
-        
+
         // Should set a synthetic reset in the future
         const nowSec = Math.floor(START_TIME / 1000);
         expect(state.reset).toBeGreaterThan(nowSec);
@@ -107,7 +107,7 @@ describe("RateControl", () => {
         const rc = new RateControl();
         const s1 = rc.onSuccess("post", null);
         expect(s1.remaining).toBe(16);
-        
+
         const s2 = rc.onSuccess("post", null);
         expect(s2.remaining).toBe(15);
     });
@@ -118,29 +118,35 @@ describe("RateControl", () => {
                 headers: {
                     "x-rate-limit-limit": "50",
                     "x-rate-limit-remaining": "49",
-                    "x-rate-limit-reset": "1234567890"
-                }
+                    "x-rate-limit-reset": "1234567890",
+                },
             };
             const rate = parseRate(res);
-            expect(rate).toEqual({ limit: 50, remaining: 49, reset: 1234567890 });
+            expect(rate).toEqual({
+                limit: 50,
+                remaining: 49,
+                reset: 1234567890,
+            });
         });
 
         it("parses nested rateLimit object", () => {
-            const res = { rateLimit: { limit: 100, remaining: 10, reset: 111 } };
+            const res = {
+                rateLimit: { limit: 100, remaining: 10, reset: 111 },
+            };
             const rate = parseRate(res);
             expect(rate).toEqual({ limit: 100, remaining: 10, reset: 111 });
         });
 
         it("prefers userDay bucket (legacy)", () => {
-            const res = { 
-                userDay: { limit: 17, remaining: 5, reset: 222 }, 
-                limit: 1000, 
-                remaining: 500 
+            const res = {
+                userDay: { limit: 17, remaining: 5, reset: 222 },
+                limit: 1000,
+                remaining: 500,
             };
             const rate = parseRate(res);
             expect(rate).toEqual({ limit: 17, remaining: 5, reset: 222 });
         });
-        
+
         it("handles missing/null input", () => {
             expect(parseRate(null)).toBeNull();
             expect(parseRate({})).toBeNull();
@@ -154,11 +160,15 @@ describe("RateControl", () => {
                     "x-rate-limit-reset": "1764454959",
                     "x-user-limit-24hour-limit": "17",
                     "x-user-limit-24hour-remaining": "0",
-                    "x-user-limit-24hour-reset": "1764458177"
-                }
+                    "x-user-limit-24hour-reset": "1764458177",
+                },
             };
             const rate = parseRate(res);
-            expect(rate).toEqual({ limit: 17, remaining: 0, reset: 1764458177 });
+            expect(rate).toEqual({
+                limit: 17,
+                remaining: 0,
+                reset: 1764458177,
+            });
         });
     });
 
@@ -169,12 +179,12 @@ describe("RateControl", () => {
                 "x-rate-limit-limit": "1000000",
                 "x-user-limit-24hour-limit": "17",
                 "x-user-limit-24hour-remaining": "5",
-                "x-user-limit-24hour-reset": "1764458177"
-            }
+                "x-user-limit-24hour-reset": "1764458177",
+            },
         };
-        
+
         rc.onSuccess("post", res);
-        
+
         // snapshot loads from DB
         const state = rc.snapshot("post");
         expect(state.limit).toBe(17);

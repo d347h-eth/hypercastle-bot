@@ -48,11 +48,11 @@ export class TwitterPublisher implements SocialPublisher {
                 },
                 { fullResponse: true },
             );
-            
+
             this.logRawResponse("success", res);
 
             const rateInfo = this.rates.onSuccess("post", res);
-            
+
             logger.info("[X] Tweet posted", {
                 component: "TwitterPublisher",
                 action: "post",
@@ -100,7 +100,8 @@ export class TwitterPublisher implements SocialPublisher {
         try {
             const headers = obj?.response?.headers || obj?.headers;
             const data = obj?.data || obj?.errors || (obj as any)?.error;
-            const code = obj?.code || obj?.response?.statusCode || obj?.response?.status;
+            const code =
+                obj?.code || obj?.response?.statusCode || obj?.response?.status;
             logger.debug("[X] Raw API Dump", {
                 component: "TwitterPublisher",
                 action: "logRawResponse",
@@ -197,7 +198,6 @@ export class TwitterPublisher implements SocialPublisher {
         }
         return this.userId;
     }
-
 }
 
 function isRateLimitedError(e: unknown): boolean {

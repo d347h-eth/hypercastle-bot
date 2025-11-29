@@ -312,6 +312,27 @@ export class SqliteSaleRepository implements SaleRepository {
         }
     }
 
+    peekBacklog(limit = 5): QueuedSale[] {
+        const rows = db
+            .prepare(
+                `SELECT sale_id, payload, attempt_count, next_attempt_at 
+                 FROM sales 
+                 WHERE status IN ('queued', 'posting', 'uploading_media', 'rendering_video', 'capturing_frames', 'fetching_html')
+                 AND next_attempt_at IS NOT NULL
+                 ORDER BY next_attempt_at ASC
+                 LIMIT ?`,
+            )
+            .all(limit) as any[];
+
+        return rows.map((row) => ({
+            sale: deserializeSale(row.payload),
+            attemptCount: row.attempt_count ? Number(row.attempt_count) : 0,
+            nextAttemptAt: row.next_attempt_at
+                ? Number(row.next_attempt_at)
+                : null,
+        }));
+    }
+
     private getMetaNumber(key: string): number {
         const row = db
             .prepare("SELECT value FROM meta WHERE key=?")

@@ -77,24 +77,24 @@ export class PostingWorkflow {
                 sale.orderSide,
             );
             // 5) Upload media
-        const mediaId = await this.ensureMediaUpload(
-            sale,
-            videoPath,
-            queued.artifacts?.mediaId,
-            queued.artifacts?.mediaUploadedAt ?? undefined,
-        );
-        // 6) Post
-        const tweet = await this.deps.publisher.post(text.trim(), [
-            mediaId,
-        ]);
-        this.deps.repo.markPosted(sale.id, tweet.id, tweet.text, now());
-        logger.info("Sale posted", {
-            component: "PostingWorkflow",
-            action: "process",
-            saleId: sale.id,
-            tweetId: tweet.id,
-            mediaId,
-        });
+            const mediaId = await this.ensureMediaUpload(
+                sale,
+                videoPath,
+                queued.artifacts?.mediaId,
+                queued.artifacts?.mediaUploadedAt ?? undefined,
+            );
+            // 6) Post
+            const tweet = await this.deps.publisher.post(text.trim(), [
+                mediaId,
+            ]);
+            this.deps.repo.markPosted(sale.id, tweet.id, tweet.text, now());
+            logger.info("Sale posted", {
+                component: "PostingWorkflow",
+                action: "process",
+                saleId: sale.id,
+                tweetId: tweet.id,
+                mediaId,
+            });
             // await this.cleanupArtifacts(root);
             return "posted";
         } catch (e) {

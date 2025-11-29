@@ -1,6 +1,9 @@
 import { SalesFeedPort } from "../domain/ports/salesFeed.js";
 import { SaleRepository } from "../domain/ports/saleRepository.js";
-import { SocialPublisher, RateLimitInfo } from "../domain/ports/socialPublisher.js";
+import {
+    SocialPublisher,
+    RateLimitInfo,
+} from "../domain/ports/socialPublisher.js";
 import { RateLimitExceededError } from "../domain/errors.js";
 import { formatPrice } from "./tweetFormatter.js";
 import { computeBackoffSeconds } from "./backoff.js";
@@ -135,7 +138,23 @@ export class BotService {
     private async postAvailable(now: number): Promise<void> {
         while (true) {
             const queued = this.deps.repo.claimNextReady(unix());
-            if (!queued) break;
+            if (!queued) {
+                // Nothing ready right now; check if we have pending backlog for logs
+                const backlog = this.deps.repo.peekBacklog(1);
+                if (backlog.length > 0) {
+                    const next = backlog[0];
+                    if (next.nextAttemptAt && next.nextAttemptAt > now) {
+                        logger.info("Sales backlog pending", {
+                            component: "BotService",
+                            action: "postAvailable",
+                            nextId: next.sale.id,
+                            waitSec: next.nextAttemptAt - now,
+                            nextAttemptAtIso: toIso(next.nextAttemptAt),
+                        });
+                    }
+                }
+                break;
+            }
             try {
                 const rateInfo = await this.deps.publisher.checkRateLimit();
                 if (

@@ -56,6 +56,7 @@ export function formatEnrichedText(
     const line1 = `#${tokenId} | ${name ?? ""}`;
     const line2 = `${price} ${symbol} (take-${orderSide})`;
     const line3 = `${attrs.Mode ?? ""} ${attrs.Chroma ?? ""}${antenna}`.trim();
-    const line4 = `${attrs.Zone ?? ""} ${attrs.Biome ? `B${attrs.Biome}` : ""}`.trim();
+    const line4 =
+        `${attrs.Zone ?? ""} ${attrs.Biome ? `B${attrs.Biome}` : ""}`.trim();
     return [line1, line2, line3, line4].filter(Boolean).join("\n");
 }

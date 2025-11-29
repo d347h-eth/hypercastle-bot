@@ -39,15 +39,18 @@ export class RateControl {
         if (remaining <= cfg.reserve) {
             const now = unix();
             const lastSpent = state.lastSpentAt ?? now;
-            
+
             // Calculate a safe reset time
             let resetAt = state.reset;
             if (!resetAt || resetAt <= now) {
                 // If we don't have a valid future reset, synthetically create one
                 // based on the fallback slot duration to allow self-healing.
-                resetAt = Math.max(lastSpent + FALLBACK_SLOT_SEC, now + FALLBACK_SLOT_SEC);
+                resetAt = Math.max(
+                    lastSpent + FALLBACK_SLOT_SEC,
+                    now + FALLBACK_SLOT_SEC,
+                );
             }
-            
+
             // Add buffer
             const safeReset = resetAt + RESET_BUFFER_SEC;
 
@@ -103,7 +106,7 @@ export class RateControl {
               };
 
         this.save(endpoint, next);
-        
+
         if (config.debugVerbose) {
             logger.debug("[Rate] Updated from success", {
                 component: "RateControl",
@@ -120,11 +123,11 @@ export class RateControl {
         const info = parseRate(error);
         const current = this.loadAndRefresh(endpoint);
         const now = unix();
-        
+
         // If we got headers/rate info, trust them.
         // If not, we assume the worst (exhausted or critical error) and block until recovery.
         // This matches the "safe fail" behavior: unknown error -> 0 remaining.
-        
+
         const next: RateState = info
             ? {
                   limit: info.limit,
@@ -136,7 +139,10 @@ export class RateControl {
             : {
                   ...current,
                   remaining: 0,
-                  reset: (current.reset && current.reset > now) ? current.reset : (now + FALLBACK_SLOT_SEC),
+                  reset:
+                      current.reset && current.reset > now
+                          ? current.reset
+                          : now + FALLBACK_SLOT_SEC,
                   lastSpentAt: now,
                   storedAt: now,
               };
@@ -172,7 +178,7 @@ export class RateControl {
                 lastSpentAt: state.lastSpentAt,
                 storedAt: now,
             };
-            
+
             // Only save/log if different
             if (state.remaining !== refreshed.remaining) {
                 this.save(endpoint, refreshed);
@@ -262,16 +268,16 @@ export function parseRate(obj: any): RateState | null {
     if (!obj) return null;
 
     // 1. Check for headers (standard X API location)
-    const headers = 
-        obj.response?.headers || 
-        obj.headers || 
+    const headers =
+        obj.response?.headers ||
+        obj.headers ||
         (obj.error && obj.error.headers);
 
     if (headers) {
-        const get = (key: string) => 
-            headers[key] ?? 
-            headers[key.toLowerCase?.()] ?? 
-            headers.get?.(key) ?? 
+        const get = (key: string) =>
+            headers[key] ??
+            headers[key.toLowerCase?.()] ??
+            headers.get?.(key) ??
             headers.get?.(key.toLowerCase?.());
 
         // Helper to extract a set of headers
@@ -279,11 +285,15 @@ export function parseRate(obj: any): RateState | null {
             const limit = get(`${prefix}-limit`);
             const remaining = get(`${prefix}-remaining`);
             const reset = get(`${prefix}-reset`);
-            if (limit !== undefined && remaining !== undefined && reset !== undefined) {
+            if (
+                limit !== undefined &&
+                remaining !== undefined &&
+                reset !== undefined
+            ) {
                 return sanitize({
                     limit: Number(limit),
                     remaining: Number(remaining),
-                    reset: Number(reset)
+                    reset: Number(reset),
                 });
             }
             return null;
@@ -320,12 +330,15 @@ export function parseRate(obj: any): RateState | null {
     const reset = obj.reset ?? obj.resetMs; // Support resetMs
 
     if (limit !== undefined && remaining !== undefined) {
-         return sanitize({
+        return sanitize({
             limit: Number(limit),
             remaining: Number(remaining),
-            reset: reset !== undefined 
-                ? (obj.resetMs !== undefined ? Math.ceil(Number(reset)/1000) : Number(reset)) 
-                : undefined
+            reset:
+                reset !== undefined
+                    ? obj.resetMs !== undefined
+                        ? Math.ceil(Number(reset) / 1000)
+                        : Number(reset)
+                    : undefined,
         });
     }
 

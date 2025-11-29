@@ -1,4 +1,7 @@
-import { RateLimitInfo, SocialPublisher } from "../../domain/ports/socialPublisher.js";
+import {
+    RateLimitInfo,
+    SocialPublisher,
+} from "../../domain/ports/socialPublisher.js";
 import { Tweet } from "../../domain/models.js";
 import { logger } from "../../logger.js";
 

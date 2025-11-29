@@ -85,7 +85,6 @@ The tweet text is programmatically generated (`src/infra/http/tokenMetadata.ts`)
 -   `[A]`: appended if Antenna is "On".
 -   `B{Biome}`: Biome number prefixed with B.
 
-
 ## Recovery Matching
 
 -   Primary: exact formatted tweet.

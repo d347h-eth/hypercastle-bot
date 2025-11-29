@@ -39,7 +39,8 @@ export const config: Config = {
     salesApiKey: process.env.SALES_API_KEY || "",
     salesCollectionAddress: process.env.SALES_COLLECTION_ADDRESS || "",
     pollIntervalMs: num("POLL_INTERVAL_MS", 30_000),
-    debugVerbose: (process.env.DEBUG_VERBOSE || "false")!.toLowerCase() === "true",
+    debugVerbose:
+        (process.env.DEBUG_VERBOSE || "false")!.toLowerCase() === "true",
 
     dbPath: process.env.DB_PATH || "./data/bot.sqlite.db",
 
