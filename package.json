@@ -26,6 +26,7 @@
     "devDependencies": {
         "@types/better-sqlite3": "^7.6.12",
         "@types/node": "24.3.3",
+        "@vitest/coverage-v8": "4.0.13",
         "prettier": "3.3.3",
         "tsx": "4.20.5",
         "typescript": "5.9.2",

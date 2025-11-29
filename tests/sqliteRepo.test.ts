@@ -54,8 +54,11 @@ describe("SqliteSaleRepository", () => {
 
         const claimed = repo.claimNextReady(now);
         expect(claimed?.sale.id).toBe("s1");
+        expect(claimed?.attemptCount).toBe(0);
 
         repo.markPosted("s1", "tw1", "tweet", now + 10);
+        
+        // Verify via raw query to ensure implementation persisted correctly
         const row = db.raw
             .prepare(
                 "SELECT status, tweet_id, posted_at FROM sales WHERE sale_id=?",
@@ -68,6 +71,42 @@ describe("SqliteSaleRepository", () => {
         expect(row.status).toBe("posted");
         expect(row.tweet_id).toBe("tw1");
         expect(row.posted_at).toBe(now + 10);
+    });
+
+    it("seeds items as seen without queuing", () => {
+        const sale = makeSale("seed1");
+        const now = 1_700_000_000;
+        repo.seedSeen([sale], now);
+
+        const row = db.raw.prepare("SELECT status FROM sales WHERE sale_id=?").get("seed1") as { status: string };
+        expect(row.status).toBe("seen");
+
+        const claimed = repo.claimNextReady(now + 100);
+        expect(claimed).toBeNull();
+    });
+
+    it("lists stale posting items and requeues them", () => {
+        const sale = makeSale("stale1");
+        const now = 1_700_000_000;
+        repo.enqueueNew([sale], now);
+        
+        // Manually move to posting to simulate a crash during posting
+        db.raw.prepare("UPDATE sales SET status='posting', posting_at=? WHERE sale_id=?").run(now, "stale1");
+
+        // Should find it if looking after stale window
+        const stale = repo.listStalePosting(now + 120); 
+        // Note: listStalePosting(cutoff) finds items where posting_at < cutoff
+        // So if posting_at is 1000, and we pass cutoff 1100, it matches.
+        
+        expect(stale).toHaveLength(1);
+        expect(stale[0].sale.id).toBe("stale1");
+
+        // Requeue
+        repo.requeueStale("stale1", now + 300);
+
+        const row = db.raw.prepare("SELECT status, next_attempt_at FROM sales WHERE sale_id=?").get("stale1") as { status: string, next_attempt_at: number };
+        expect(row.status).toBe("queued");
+        expect(row.next_attempt_at).toBe(now + 300);
     });
 
     it("schedules retry and increments attempts", () => {
@@ -87,6 +126,22 @@ describe("SqliteSaleRepository", () => {
         expect(row.status).toBe("queued");
         expect(row.next_attempt_at).toBe(now + 60);
         expect(row.attempt_count).toBe(1);
+    });
+
+    it("requeues after rate limit with specific reset", () => {
+        const sale = makeSale("rl1");
+        const now = 1_700_000_000;
+        repo.enqueueNew([sale], now);
+        
+        const resetAt = now + 3600;
+        repo.requeueAfterRateLimit("rl1", resetAt);
+
+        const row = db.raw.prepare("SELECT status, next_attempt_at FROM sales WHERE sale_id=?").get("rl1") as { status: string, next_attempt_at: number };
+        expect(row.status).toBe("queued");
+        expect(row.next_attempt_at).toBe(resetAt);
+        // Should increment attempt count on rate limit deferral
+        const row2 = db.raw.prepare("SELECT attempt_count FROM sales WHERE sale_id=?").get("rl1") as { attempt_count: number };
+        expect(row2.attempt_count).toBe(1);
     });
 
     it("prunes old records respecting interval", () => {

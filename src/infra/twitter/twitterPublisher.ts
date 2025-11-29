@@ -7,7 +7,7 @@ import {
 } from "../../domain/ports/socialPublisher.js";
 import { Tweet } from "../../domain/models.js";
 import { logger } from "../../logger.js";
-import { RateControl, parseRate } from "./rateControl.js";
+import { RateControl } from "./rateControl.js";
 import { toIso } from "../../util/time.js";
 
 export class TwitterPublisher implements SocialPublisher {
@@ -48,25 +48,21 @@ export class TwitterPublisher implements SocialPublisher {
                 },
                 { fullResponse: true },
             );
-            const headers = normalizeHeaders(res?.response?.headers);
-            const rateInfo = extractRateInfoFromResponse(res);
-            this.rates.onSuccess("post", rateInfo);
-            logRateDebug("post", "success", rateInfo, headers);
+            
+            const rateInfo = this.rates.onSuccess("post", res);
+            
             logger.info("[X] Tweet posted", {
                 component: "TwitterPublisher",
                 action: "post",
                 tweetId: res.data.id,
-                rateLimit: rateInfo,
+                remaining: rateInfo.remaining,
+                reset: rateInfo.reset,
             });
             return { id: res.data.id, text: text };
         } catch (e) {
-            const headers = normalizeHeaders((e as any)?.response?.headers);
-            const info = this.rates.onError(
-                "post",
-                extractRateInfoFromError(e),
-            );
-            logRateDebug("post", "error", info, headers);
-            const resetAt = info?.reset;
+            const info = this.rates.onError("post", e);
+            const resetAt = info.reset;
+
             if (isRateLimitedError(e)) {
                 logger.warn("[X] Tweet rate limited", {
                     component: "TwitterPublisher",
@@ -75,14 +71,14 @@ export class TwitterPublisher implements SocialPublisher {
                     error: String(e),
                     resetAt,
                     resetAtIso: toIso(resetAt),
-                    remaining: info?.remaining,
-                    limit: info?.limit,
+                    remaining: info.remaining,
+                    limit: info.limit,
                 });
                 throw new RateLimitExceededError(
                     "Tweet rate limited",
                     resetAt,
-                    info?.remaining,
-                    info?.limit,
+                    info.remaining,
+                    info.limit,
                 );
             }
             logger.error("[X] Tweet failed", {
@@ -188,75 +184,4 @@ function isRateLimitedError(e: unknown): boolean {
     }
     const msg = String(e);
     return /429/.test(msg);
-}
-
-function extractRateInfoFromError(e: unknown): RateLimitInfo | null {
-    if (e && typeof e === "object") {
-        const err = e as ApiResponseError;
-        const rl: any = (err as any).rateLimit || (err as any).rateLimits;
-        const info = parseRate(rl) || extractRateInfoFromResponse(rl);
-        if (info) return info;
-        const headers = (err as any)?.response?.headers;
-        if (headers) {
-            return parseRate({
-                limit: headers["x-ratelimit-limit"],
-                remaining: headers["x-ratelimit-remaining"],
-                reset: headers["x-ratelimit-reset"],
-            });
-        }
-    }
-    return null;
-}
-
-function extractRateInfoFromResponse(res: any): RateLimitInfo | null {
-    if (!res) return null;
-    const rate = (res as any).rateLimit || (res as any).rateLimits;
-    const parsed = parseRate(rate);
-    if (parsed) return parsed;
-    const headers = (res as any)?.response?.headers || (res as any)?.headers;
-    if (headers) {
-        return parseRate({
-            limit: headers["x-ratelimit-limit"],
-            remaining: headers["x-ratelimit-remaining"],
-            reset: headers["x-ratelimit-reset"],
-        });
-    }
-    return null;
-}
-
-function logRateDebug(
-    endpoint: "post",
-    stage: string,
-    parsedRate: RateLimitInfo | null,
-    headers?: Record<string, unknown>,
-): void {
-    if (!config.debugVerbose) return;
-    logger.debug("[X] Rate info", {
-        component: "TwitterPublisher",
-        action: "rateHeaders",
-        endpoint,
-        stage,
-        rate: parsedRate,
-        headers,
-    });
-}
-
-function normalizeHeaders(headers: any): Record<string, unknown> | undefined {
-    if (!headers) return undefined;
-    const get = (key: string) =>
-        headers[key] ??
-        headers[key.toLowerCase?.()] ??
-        headers.get?.(key) ??
-        headers.get?.(key.toLowerCase?.());
-    const limit = get("x-ratelimit-limit");
-    const remaining = get("x-ratelimit-remaining");
-    const reset = get("x-ratelimit-reset");
-    if (
-        limit === undefined &&
-        remaining === undefined &&
-        reset === undefined
-    ) {
-        return undefined;
-    }
-    return { limit, remaining, reset };
 }
