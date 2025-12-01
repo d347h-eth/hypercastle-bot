@@ -267,7 +267,7 @@ function decrement(state: RateState, fallbackLimit: number): RateState {
 export function parseRate(obj: any): RateState | null {
     if (!obj) return null;
 
-    // 1. Check for headers (standard X API location)
+    // Check for headers (standard X API location)
     const headers =
         obj.response?.headers ||
         obj.headers ||
@@ -310,36 +310,6 @@ export function parseRate(obj: any): RateState | null {
         // Priority 3: Standard generic limit
         const standard = extract("x-rate-limit");
         if (standard) return standard;
-    }
-
-    // 2. Check structure with nested 'rateLimit' or 'rateLimits'
-    const rl = obj.rateLimit || obj.rateLimits;
-    if (rl) {
-        return parseRate(rl); // Recurse
-    }
-
-    // 3. Check for userDay bucket (Legacy/Priority logic)
-    if (obj.userDay) {
-        return parseRate(obj.userDay); // Recurse
-    }
-
-    // 4. Check for direct properties (Test mocks or simple objects)
-    // Note: We need to be careful not to pick up garbage, but tests send clean objects.
-    const limit = obj.limit;
-    const remaining = obj.remaining;
-    const reset = obj.reset ?? obj.resetMs; // Support resetMs
-
-    if (limit !== undefined && remaining !== undefined) {
-        return sanitize({
-            limit: Number(limit),
-            remaining: Number(remaining),
-            reset:
-                reset !== undefined
-                    ? obj.resetMs !== undefined
-                        ? Math.ceil(Number(reset) / 1000)
-                        : Number(reset)
-                    : undefined,
-        });
     }
 
     return null;

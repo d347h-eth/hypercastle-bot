@@ -52,6 +52,16 @@ yarn
 yarn dev
 ```
 
+### IDE Setup (VSCode)
+
+This project uses Yarn 4 PnP. To ensure VSCode correctly resolves imports and dependencies:
+
+```sh
+yarn dlx @yarnpkg/sdks vscode
+```
+
+This generates the necessary configuration in `.vscode/` and `.yarn/sdks/`.
+
 ## Project Layout
 
 -   `src/` — application code

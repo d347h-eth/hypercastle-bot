@@ -41,26 +41,29 @@ export class TwitterPublisher implements SocialPublisher {
                           | [string, string, string]
                           | [string, string, string, string])
                     : undefined;
-            const res: any = await (this.client.v2 as any).tweet(
-                {
-                    text,
-                    media: mediaTuple ? { media_ids: mediaTuple } : undefined,
-                },
-                { fullResponse: true },
-            );
+            const body = {
+                text,
+                media: mediaTuple ? { media_ids: mediaTuple } : undefined,
+            };
+            const res: any = await this.client.v2.post("tweets", body, {
+                fullResponse: true,
+            });
 
             this.logRawResponse("success", res);
 
             const rateInfo = this.rates.onSuccess("post", res);
+            // res.data is the ApiResponse body; res.data.data is the tweet object
+            const tweetData = res.data?.data || res.data;
 
             logger.info("[X] Tweet posted", {
                 component: "TwitterPublisher",
                 action: "post",
-                tweetId: res.data.id,
+                tweetId: tweetData.id,
                 remaining: rateInfo.remaining,
                 reset: rateInfo.reset,
             });
-            return { id: res.data.id, text: text };
+
+            return { id: tweetData.id, text: text };
         } catch (e) {
             this.logRawResponse("error", e);
 
@@ -98,10 +101,11 @@ export class TwitterPublisher implements SocialPublisher {
     private logRawResponse(stage: string, obj: any) {
         if (!config.debugVerbose) return;
         try {
-            const headers = obj?.response?.headers || obj?.headers;
+            // Check standard locations for headers/data in twitter-api-v2 responses
+            const headers = obj?.headers || obj?.response?.headers;
             const data = obj?.data || obj?.errors || (obj as any)?.error;
-            const code =
-                obj?.code || obj?.response?.statusCode || obj?.response?.status;
+            const code = obj?.code || obj?.response?.statusCode || obj?.response?.status;
+            
             logger.debug("[X] Raw API Dump", {
                 component: "TwitterPublisher",
                 action: "logRawResponse",

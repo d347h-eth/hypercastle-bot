@@ -29,7 +29,13 @@ describe("RateControl", () => {
     it("blocks when remaining would consume reserve and uses provided reset", () => {
         const rc = new RateControl();
         const resetAt = Math.floor(START_TIME / 1000) + 120;
-        rc.onSuccess("post", { limit: 17, remaining: 1, reset: resetAt });
+        rc.onSuccess("post", {
+            headers: {
+                "x-rate-limit-limit": 17,
+                "x-rate-limit-remaining": 1,
+                "x-rate-limit-reset": resetAt,
+            },
+        });
 
         try {
             rc.guard("post");
@@ -85,7 +91,13 @@ describe("RateControl", () => {
     it("refreshes state from DB after reset passes", () => {
         const rc = new RateControl();
         const nowSec = Math.floor(START_TIME / 1000);
-        rc.onError("post", { limit: 17, remaining: 0, reset: nowSec + 10 });
+        rc.onError("post", {
+            headers: {
+                "x-rate-limit-limit": 17,
+                "x-rate-limit-remaining": 0,
+                "x-rate-limit-reset": nowSec + 10,
+            },
+        });
 
         vi.advanceTimersByTime(11_000); // 11s later
 
@@ -127,24 +139,6 @@ describe("RateControl", () => {
                 remaining: 49,
                 reset: 1234567890,
             });
-        });
-
-        it("parses nested rateLimit object", () => {
-            const res = {
-                rateLimit: { limit: 100, remaining: 10, reset: 111 },
-            };
-            const rate = parseRate(res);
-            expect(rate).toEqual({ limit: 100, remaining: 10, reset: 111 });
-        });
-
-        it("prefers userDay bucket (legacy)", () => {
-            const res = {
-                userDay: { limit: 17, remaining: 5, reset: 222 },
-                limit: 1000,
-                remaining: 500,
-            };
-            const rate = parseRate(res);
-            expect(rate).toEqual({ limit: 17, remaining: 5, reset: 222 });
         });
 
         it("handles missing/null input", () => {
