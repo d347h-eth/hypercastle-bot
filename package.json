@@ -4,7 +4,7 @@
     "author": "d347h.eth <wagdie.dev@gmail.com>",
     "license": "AGPL-3.0-only",
     "type": "module",
-    "packageManager": "yarn@4.9.4",
+    "packageManager": "yarn@4.12.0",
     "engines": {
         "node": "24.3.0"
     },
@@ -22,6 +22,17 @@
         "puppeteer": "^24.30.0",
         "twitter-api-v2": "^1.17.2",
         "viem": "^2.39.3"
+    },
+    "dependenciesMeta": {
+        "better-sqlite3": {
+            "built": true
+        },
+        "esbuild": {
+            "built": true
+        },
+        "puppeteer": {
+            "built": true
+        }
     },
     "devDependencies": {
         "@types/better-sqlite3": "^7.6.12",

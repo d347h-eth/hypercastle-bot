@@ -2617,6 +2617,13 @@ __metadata:
     typescript: "npm:5.9.2"
     viem: "npm:^2.39.3"
     vitest: "npm:4.0.13"
+  dependenciesMeta:
+    better-sqlite3:
+      built: true
+    esbuild:
+      built: true
+    puppeteer:
+      built: true
   languageName: unknown
   linkType: soft
 

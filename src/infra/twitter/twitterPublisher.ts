@@ -104,8 +104,9 @@ export class TwitterPublisher implements SocialPublisher {
             // Check standard locations for headers/data in twitter-api-v2 responses
             const headers = obj?.headers || obj?.response?.headers;
             const data = obj?.data || obj?.errors || (obj as any)?.error;
-            const code = obj?.code || obj?.response?.statusCode || obj?.response?.status;
-            
+            const code =
+                obj?.code || obj?.response?.statusCode || obj?.response?.status;
+
             logger.debug("[X] Raw API Dump", {
                 component: "TwitterPublisher",
                 action: "logRawResponse",
