@@ -21,7 +21,7 @@ export interface SaleRepository {
     markInitialized(): void;
 
     seedSeen(sales: Sale[], seenAt: number): void;
-    enqueueNew(sales: Sale[], seenAt: number): number;
+    enqueueNew(sales: Sale[], seenAt: number, cooldownHours?: number): number;
 
     claimNextReady(now: number): QueuedSale | null;
     markPosted(

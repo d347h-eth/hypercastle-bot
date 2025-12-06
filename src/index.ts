@@ -33,6 +33,7 @@ async function main() {
             stalePostingSeconds: 120,
             pruneDays: 30,
             pruneIntervalHours: 6,
+            tokenCooldownHours: config.tokenCooldownHours,
         },
     });
 

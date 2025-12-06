@@ -31,6 +31,7 @@ export interface Config {
     };
 
     useFakePublisher: boolean;
+    tokenCooldownHours: number;
 }
 
 export const config: Config = {
@@ -56,6 +57,8 @@ export const config: Config = {
 
     useFakePublisher:
         (process.env.USE_FAKE_PUBLISHER || "false").toLowerCase() === "true",
+
+    tokenCooldownHours: num("TOKEN_COOLDOWN_HOURS", 24),
 };
 
 export function validateConfig(): void {

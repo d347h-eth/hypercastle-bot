@@ -59,9 +59,11 @@ export class SqliteSaleRepository implements SaleRepository {
 
     seedSeen(sales: Sale[], seenAt: number): void {
         if (!sales.length) return;
-        const insert = db.prepare<[string, number, number, string, string]>(
-            `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, status, payload)
-             VALUES (?,?,?,?,?)`,
+        const insert = db.prepare<
+            [string, number, number, string, string, string]
+        >(
+            `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, status, payload, token_id)
+             VALUES (?,?,?,?,?,?)`,
         );
         db.exec("BEGIN");
         try {
@@ -72,6 +74,7 @@ export class SqliteSaleRepository implements SaleRepository {
                     seenAt,
                     "seen",
                     serializeSale(sale),
+                    sale.tokenId,
                 );
             }
             db.exec("COMMIT");
@@ -81,28 +84,64 @@ export class SqliteSaleRepository implements SaleRepository {
         }
     }
 
-    enqueueNew(sales: Sale[], seenAt: number): number {
+    enqueueNew(sales: Sale[], seenAt: number, cooldownHours?: number): number {
         if (!sales.length) return 0;
+
+        let recentSet = new Set<string>();
+        if (cooldownHours && cooldownHours > 0) {
+            const cutoff = seenAt - cooldownHours * 3600;
+            const tokenIds = sales.map((s) => s.tokenId);
+            // Limit checks to relevant tokens to keep query light
+            const placeholders = tokenIds.map(() => "?").join(",");
+            const recent = db
+                .prepare(
+                    `SELECT DISTINCT token_id FROM sales 
+                 WHERE status = 'posted' 
+                 AND posted_at > ? 
+                 AND token_id IN (${placeholders})`,
+                )
+                .all(cutoff, ...tokenIds) as { token_id: string }[];
+            recentSet = new Set(recent.map((r) => r.token_id));
+        }
+
         const insert = db.prepare<
-            [string, number, number, number, number, string, string]
+            [string, number, number, number, number, string, string, string]
         >(
-            `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, enqueued_at, next_attempt_at, status, payload)
-             VALUES (?,?,?,?,?,?,?)`,
+            `INSERT OR IGNORE INTO sales (sale_id, created_at, seen_at, enqueued_at, next_attempt_at, status, payload, token_id)
+             VALUES (?,?,?,?,?,?,?,?)`,
         );
         let inserted = 0;
         db.exec("BEGIN");
         try {
             for (const sale of sales) {
+                // If on cooldown, skip queue (mark as seen), otherwise queue
+                const isOnCooldown = recentSet.has(sale.tokenId);
+                const status = isOnCooldown ? "seen" : "queued";
+
+                // For 'seen', next_attempt_at should be NULL (or we can just leave it 0/NULL, but let's be explicit if schema allows NULL)
+                // The query binds 0 for next_attempt_at currently.
+                // If status is 'seen', next_attempt_at doesn't matter much but NULL is cleaner.
+                // However, the INSERT statement expects 8 args.
+                // Let's pass null for next_attempt_at if status is seen.
+                const nextAttempt = isOnCooldown ? null : 0;
+
                 const res = insert.run(
                     sale.id,
                     sale.timestamp,
                     seenAt,
                     seenAt,
-                    0,
-                    "queued",
+                    nextAttempt as any, // casting because better-sqlite3 handles null
+                    status,
                     serializeSale(sale),
+                    sale.tokenId,
                 );
-                if (res.changes > 0) inserted += 1;
+
+                // Only count as 'inserted' (enqueued) if we actually queued it?
+                // Or if we persisted it?
+                // BotService logs "Fetched X, enqueued Y".
+                // If we mark as seen, it's effectively "skipped" from the queue.
+                // So I should increment inserted only if status === "queued".
+                if (res.changes > 0 && status === "queued") inserted += 1;
             }
             db.exec("COMMIT");
         } catch (e) {

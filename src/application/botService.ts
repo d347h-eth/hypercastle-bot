@@ -17,6 +17,7 @@ export interface BotConfig {
     stalePostingSeconds: number;
     pruneDays: number;
     pruneIntervalHours: number;
+    tokenCooldownHours: number;
 }
 
 export class BotService {
@@ -111,7 +112,11 @@ export class BotService {
         try {
             const feed = await this.deps.feed.fetchRecent();
             const now = unix();
-            const newCount = this.deps.repo.enqueueNew(feed, now);
+            const newCount = this.deps.repo.enqueueNew(
+                feed,
+                now,
+                this.deps.config.tokenCooldownHours,
+            );
             if (newCount > 0) {
                 logger.info("Fetched recent sales (Reservoir)", {
                     component: "BotService",

@@ -191,4 +191,39 @@ describe("SqliteSaleRepository", () => {
             .get().c as number;
         expect(countAfterSecond).toBe(1);
     });
+
+    it("respects token cooldown by marking recent sales as seen", () => {
+        const sale1 = makeSale("s1");
+        sale1.tokenId = "100";
+        const now = 2_000_000_000;
+
+        // 1. Post a sale for token 100
+        repo.enqueueNew([sale1], now);
+        repo.markPosted("s1", "tw1", "text", now);
+
+        // 2. New sale for same token 1 hour later
+        const sale2 = makeSale("s2");
+        sale2.tokenId = "100";
+        const later = now + 3600;
+
+        // Enqueue with 24h cooldown
+        repo.enqueueNew([sale2], later, 24);
+
+        // Should be 'seen' because token 100 was posted recently
+        const row2 = db.raw
+            .prepare("SELECT status FROM sales WHERE sale_id='s2'")
+            .get() as { status: string };
+        expect(row2.status).toBe("seen");
+
+        // 3. New sale for different token
+        const sale3 = makeSale("s3");
+        sale3.tokenId = "200";
+        repo.enqueueNew([sale3], later, 24);
+
+        // Should be 'queued'
+        const row3 = db.raw
+            .prepare("SELECT status FROM sales WHERE sale_id='s3'")
+            .get() as { status: string };
+        expect(row3.status).toBe("queued");
+    });
 });
