@@ -95,7 +95,7 @@ export class PostingWorkflow {
                 tweetId: tweet.id,
                 mediaId,
             });
-            // await this.cleanupArtifacts(root);
+            await this.cleanupArtifacts(root);
             return "posted";
         } catch (e) {
             // Defer rate-limit and transient handling to the caller so we can schedule
