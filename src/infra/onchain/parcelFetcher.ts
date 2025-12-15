@@ -174,36 +174,14 @@ export async function fetchParcelHtml(
     const isDaydream =
         status.slug === "daydream" || status.slug === "originDaydream";
     if (isDaydream && !opts.canvasOverride) {
-        // 1. Get zeroed canvas (simulate terrain status)
-        const zeroCanvas = await resolveCanvas(client, tid, {
-            value: STATUS_CONFIG.terrain.value,
-        });
-
-        // 2. Call contract to calculate terrain heightmap
-        // We use status=0 (Terrain) to force the calculation
-        const indices = (await client.readContract({
-            address: rendererAddress,
-            abi: rendererAbi,
-            functionName: "tokenHeightmapIndices",
-            args: [
-                STATUS_CONFIG.terrain.value,
-                placement,
-                opts.seed ?? DEFAULT_SEED,
-                opts.decay ?? DEFAULT_DECAY,
-                zeroCanvas.rows,
-            ],
-        })) as unknown as readonly (readonly bigint[])[];
-
-        // 3. Pack the 32x32 result into compressed canvas rows
-        const packedRows = packHeightmapIndices(indices);
-
-        // console.log("DEBUG: Packed Canvas (Decimal String):");
-        // console.log(packedRows.map((r) => r.toString()).join());
-
-        canvas = {
-            rows: normalizeCanvas(packedRows),
-            source: "calculated-terrain",
-        };
+        canvas = await resolveCalculatedTerrainCanvas(
+            client,
+            rendererAddress,
+            tid,
+            placement,
+            opts.seed ?? DEFAULT_SEED,
+            opts.decay ?? DEFAULT_DECAY,
+        );
 
         // For renderParcel, we must use the "Terraformed" equivalent status
         // to ensure it renders the calculated canvas correctly.
@@ -234,6 +212,46 @@ export async function fetchParcelHtml(
     const outPath = path.join(outDir, `token-${tokenId}.html`);
     await writeFile(outPath, html, "utf8");
     return { html, filePath: outPath };
+}
+
+async function resolveCalculatedTerrainCanvas(
+    client: PublicClient,
+    rendererAddress: Address,
+    tokenId: bigint,
+    placement: bigint,
+    seed: bigint,
+    decay: bigint,
+): Promise<{ rows: bigint[]; source: string }> {
+    // 1. Get zeroed canvas (simulate terrain status)
+    const zeroCanvas = await resolveCanvas(client, tokenId, {
+        value: STATUS_CONFIG.terrain.value,
+    });
+
+    // 2. Call contract to calculate terrain heightmap
+    // We use status=0 (Terrain) to force the calculation
+    const indices = (await client.readContract({
+        address: rendererAddress,
+        abi: rendererAbi,
+        functionName: "tokenHeightmapIndices",
+        args: [
+            STATUS_CONFIG.terrain.value,
+            placement,
+            seed,
+            decay,
+            zeroCanvas.rows,
+        ],
+    })) as unknown as readonly (readonly bigint[])[];
+
+    // 3. Pack the 32x32 result into compressed canvas rows
+    const packedRows = packHeightmapIndices(indices);
+
+    // console.log("DEBUG: Packed Canvas (Decimal String):");
+    // console.log(packedRows.map((r) => r.toString()).join());
+
+    return {
+        rows: normalizeCanvas(packedRows),
+        source: "calculated-terrain",
+    };
 }
 
 async function resolveVersion(
