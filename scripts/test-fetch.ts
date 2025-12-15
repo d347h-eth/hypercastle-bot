@@ -16,16 +16,21 @@ async function main() {
 
     const tokenId = args[0];
     const statusOverride = args[1] as any; // "daydream" | "terrain" | etc.
+    const forceTerrain = args[2] === "true" || args[2] === "force";
 
     console.log(`Fetching parcel for Token ID: ${tokenId}`);
     if (statusOverride) {
         console.log(`Override Status: ${statusOverride}`);
+    }
+    if (forceTerrain) {
+        console.log(`Force Terrain Calculation: Enabled`);
     }
 
     try {
         const start = Date.now();
         const result = await fetchParcelHtml(tokenId, {
             statusOverride: statusOverride,
+            forceTerrainForDaydream: forceTerrain,
             // You can also test canvasOverride if needed, but we want to test the logic where it's missing
         });
         const duration = Date.now() - start;

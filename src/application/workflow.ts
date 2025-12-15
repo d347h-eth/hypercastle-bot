@@ -118,6 +118,7 @@ export class PostingWorkflow {
         const { filePath } = await fetchParcelHtml(sale.tokenId, {
             outputDir: root,
             version: 2n,
+            forceTerrainForDaydream: true,
         } as ParcelFetchOptions);
         this.deps.repo.setHtmlPath(sale.id, filePath);
         return filePath;

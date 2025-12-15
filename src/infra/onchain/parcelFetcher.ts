@@ -153,6 +153,7 @@ export interface ParcelFetchOptions {
     statusOverride?: StatusKey;
     canvasOverride?: bigint[] | string;
     outputDir?: string;
+    forceTerrainForDaydream?: boolean;
 }
 
 export async function fetchParcelHtml(
@@ -173,7 +174,7 @@ export async function fetchParcelHtml(
     // Special handling for Daydream/OriginDaydream without explicit canvas override
     const isDaydream =
         status.slug === "daydream" || status.slug === "originDaydream";
-    if (isDaydream && !opts.canvasOverride) {
+    if (isDaydream && !opts.canvasOverride && opts.forceTerrainForDaydream) {
         canvas = await resolveCalculatedTerrainCanvas(
             client,
             rendererAddress,
