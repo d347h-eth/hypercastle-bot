@@ -130,6 +130,19 @@ const rendererAbi = [
         ],
         outputs: [{ type: "string" }],
     },
+    {
+        name: "tokenHeightmapIndices",
+        type: "function",
+        stateMutability: "view",
+        inputs: [
+            { type: "uint256", name: "status" },
+            { type: "uint256", name: "placement" },
+            { type: "uint256", name: "seed" },
+            { type: "uint256", name: "decay" },
+            { type: "uint256[]", name: "canvas" },
+        ],
+        outputs: [{ type: "uint256[32][32]", name: "result" }],
+    },
 ] as const;
 
 export interface ParcelFetchOptions {
@@ -153,13 +166,59 @@ export async function fetchParcelHtml(
     const version = await resolveVersion(client, tid, opts.version);
     const rendererAddress = await resolveDataAddress(client, version.value);
     const placement = await resolvePlacement(client, tid);
-    const status = await resolveStatus(client, tid, opts.statusOverride);
-    const canvas = await resolveCanvas(
-        client,
-        tid,
-        status,
-        opts.canvasOverride,
-    );
+    let status = await resolveStatus(client, tid, opts.statusOverride);
+
+    let canvas: { rows: bigint[]; source: string };
+
+    // Special handling for Daydream/OriginDaydream without explicit canvas override
+    const isDaydream =
+        status.slug === "daydream" || status.slug === "originDaydream";
+    if (isDaydream && !opts.canvasOverride) {
+        // 1. Get zeroed canvas (simulate terrain status)
+        const zeroCanvas = await resolveCanvas(client, tid, {
+            value: STATUS_CONFIG.terrain.value,
+        });
+
+        // 2. Call contract to calculate terrain heightmap
+        // We use status=0 (Terrain) to force the calculation
+        const indices = (await client.readContract({
+            address: rendererAddress,
+            abi: rendererAbi,
+            functionName: "tokenHeightmapIndices",
+            args: [
+                STATUS_CONFIG.terrain.value,
+                placement,
+                opts.seed ?? DEFAULT_SEED,
+                opts.decay ?? DEFAULT_DECAY,
+                zeroCanvas.rows,
+            ],
+        })) as unknown as readonly (readonly bigint[])[];
+
+        // 3. Pack the 32x32 result into compressed canvas rows
+        const packedRows = packHeightmapIndices(indices);
+
+        // console.log("DEBUG: Packed Canvas (Decimal String):");
+        // console.log(packedRows.map((r) => r.toString()).join());
+
+        canvas = {
+            rows: normalizeCanvas(packedRows),
+            source: "calculated-terrain",
+        };
+
+        // For renderParcel, we must use the "Terraformed" equivalent status
+        // to ensure it renders the calculated canvas correctly.
+        // Daydream -> Terraformed (2)
+        // OriginDaydream -> OriginTerraformed (4)
+        const targetStatus =
+            status.slug === "daydream"
+                ? STATUS_CONFIG.terraformed.value
+                : STATUS_CONFIG.originTerraformed.value;
+
+        // Mutate status object to force the render call to use the new status
+        status = { ...status, value: targetStatus };
+    } else {
+        canvas = await resolveCanvas(client, tid, status, opts.canvasOverride);
+    }
 
     const html = await renderParcel(client, rendererAddress, {
         status: status.value,
@@ -376,6 +435,49 @@ function canvasFromDecimalString(input: string): bigint[] {
     while (rows.length < CANVAS_ROW_COUNT) {
         rows.push(0n);
     }
+    return rows;
+}
+
+function packHeightmapIndices(
+    indices: readonly (readonly bigint[])[],
+): bigint[] {
+    const rows: bigint[] = [];
+    const numRows = indices.length;
+
+    // We need to pack 32x32 indices into 16 uint256s.
+    // Each uint256 holds 2 rows of the grid (64 values) as DECIMAL DIGITS.
+    // The contract reverses the uint256 and reads digits from right to left (LSB).
+    // So we need to pack them such that the first value (0,0) is the most significant digit (leftmost)
+    // of the packed number (before reversal).
+    // packed = v0 * 10^63 + v1 * 10^62 ... + v63.
+
+    for (let r = 0; r < CANVAS_ROW_COUNT; r++) {
+        // Each loop iteration produces ONE uint256 (one element of the canvas array)
+        // This corresponds to 2 rows from the indices array: 2*r and 2*r+1
+        const rowIdxA = r * 2;
+        const rowIdxB = r * 2 + 1;
+
+        const rowA = rowIdxA < numRows ? indices[rowIdxA] : [];
+        const rowB = rowIdxB < numRows ? indices[rowIdxB] : [];
+
+        let packed = 0n;
+
+        // Process Row A (First 32 digits)
+        for (let c = 0; c < 32; c++) {
+            const val = c < rowA.length ? rowA[c] : 0n;
+            // Append digit: shift existing left by one decimal place, add new value
+            packed = packed * 10n + val;
+        }
+
+        // Process Row B (Next 32 digits)
+        for (let c = 0; c < 32; c++) {
+            const val = c < rowB.length ? rowB[c] : 0n;
+            packed = packed * 10n + val;
+        }
+
+        rows.push(packed);
+    }
+
     return rows;
 }
 
