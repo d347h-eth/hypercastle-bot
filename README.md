@@ -23,9 +23,14 @@ docker run --rm -it \
   --name terraforms-bot \
   -v $(pwd)/data:/data \
   --env-file .env \
-  -e DB_PATH=/data/bot.sqlite.db \
+  -e DATA_DIR=/data \
   terraforms-bot
 ```
+
+The bot will use `/data` for:
+
+-   Database: `/data/bot.sqlite.db`
+-   Artifacts: `/data/artifacts/`
 
 The bot will create `/data/bot.sqlite.db` and start polling.
 

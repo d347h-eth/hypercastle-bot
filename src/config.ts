@@ -18,7 +18,9 @@ export interface Config {
     pollIntervalMs: number;
     debugVerbose: boolean;
 
+    dataDir: string;
     dbPath: string;
+    artifactsDir: string;
 
     xAuthMode: AuthMode;
     x: {
@@ -43,7 +45,13 @@ export const config: Config = {
     debugVerbose:
         (process.env.DEBUG_VERBOSE || "false")!.toLowerCase() === "true",
 
-    dbPath: process.env.DB_PATH || "./data/bot.sqlite.db",
+    dataDir: process.env.DATA_DIR || "./data",
+    dbPath:
+        process.env.DB_PATH ||
+        `${process.env.DATA_DIR || "./data"}/bot.sqlite.db`,
+    artifactsDir:
+        process.env.ARTIFACTS_DIR ||
+        `${process.env.DATA_DIR || "./data"}/artifacts`,
 
     xAuthMode: "oauth1",
     x: {

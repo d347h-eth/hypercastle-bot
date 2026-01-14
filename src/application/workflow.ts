@@ -105,7 +105,10 @@ export class PostingWorkflow {
     }
 
     private artifactRoot(saleId: string): string {
-        return path.join("data", "artifacts", saleId);
+        return path.join(
+            this.config.artifactsRoot || path.join("data", "artifacts"),
+            saleId,
+        );
     }
 
     private async ensureHtml(

@@ -18,6 +18,7 @@ export interface BotConfig {
     pruneDays: number;
     pruneIntervalHours: number;
     tokenCooldownHours: number;
+    artifactsDir: string;
 }
 
 export class BotService {
@@ -37,7 +38,7 @@ export class BotService {
             workflow ||
             new PostingWorkflow(
                 { repo: deps.repo, publisher: deps.publisher },
-                { artifactsRoot: "data/artifacts" },
+                { artifactsRoot: deps.config.artifactsDir },
             );
     }
 

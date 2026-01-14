@@ -34,6 +34,7 @@ async function main() {
             pruneDays: 30,
             pruneIntervalHours: 6,
             tokenCooldownHours: config.tokenCooldownHours,
+            artifactsDir: config.artifactsDir,
         },
     });
 
