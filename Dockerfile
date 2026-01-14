@@ -23,6 +23,7 @@ RUN yarn install --immutable
 
 # Copy source and migrations
 COPY src ./src
+COPY scripts ./scripts
 COPY migrations ./migrations
 
 # Build TypeScript
@@ -56,6 +57,8 @@ COPY --from=base /app/.yarn /app/.yarn
 COPY --from=base /app/package.json ./package.json
 COPY --from=base /app/yarn.lock ./yarn.lock
 COPY --from=base /app/dist ./dist
+COPY --from=base /app/src ./src
+COPY --from=base /app/scripts ./scripts
 COPY migrations ./migrations
 
 # Create data dir for SQLite
