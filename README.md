@@ -23,6 +23,7 @@ docker run --rm -it \
   --name terraforms-bot \
   -v $(pwd)/data:/data \
   --env-file .env \
+  -e DB_PATH=/data/bot.sqlite.db \
   terraforms-bot
 ```
 
@@ -46,6 +47,12 @@ Notes:
 -   For timeline verification, provide either `X_USER_ID` or `X_USERNAME`.
 
 ## Development
+
+Requirements:
+
+-   Node.js 24+
+-   Yarn 4+
+-   **FFmpeg** (must be in PATH for video rendering)
 
 ```sh
 yarn
