@@ -28,7 +28,10 @@ const DEFAULTS = {
     captureDurationSeconds: 15,
     startupDelayMs: 50,
     navigationTimeoutMs: 20_000,
-    viewport: { width: 1200, height: 1732 },
+    viewport: {
+        width: Number(process.env.CAPTURE_WIDTH) || 1200,
+        height: Number(process.env.CAPTURE_HEIGHT) || 1732,
+    },
     imageType: "png" as ImageType,
     jpegQuality: 90,
 };
