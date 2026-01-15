@@ -89,7 +89,6 @@ export async function captureFrames(
             "--allow-file-access-from-files",
             "--enable-local-file-accesses",
             "--disable-gpu",
-            "--disable-dev-shm-usage",
             "--disable-accelerated-2d-canvas",
         ],
     });
