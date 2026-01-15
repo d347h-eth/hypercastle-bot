@@ -88,6 +88,9 @@ export async function captureFrames(
             "--disable-setuid-sandbox",
             "--allow-file-access-from-files",
             "--enable-local-file-accesses",
+            "--disable-gpu",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
         ],
     });
     try {
