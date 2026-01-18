@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24-bookworm-slim AS base
+FROM node:24 AS base
 
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/app/.cache
@@ -32,53 +32,30 @@ COPY migrations ./migrations
 # Build TypeScript
 RUN yarn build
 
-# Runtime image
-FROM node:24-bookworm-slim AS runtime
+# Runtime image (Standard Node/Debian image for max compatibility)
+FROM node:24 AS runtime
 ENV NODE_ENV=production
+
+# Configure Puppeteer to use local cache
 ENV PUPPETEER_CACHE_DIR=/app/.cache
 
 RUN corepack enable && corepack prepare yarn@4.12.0 --activate
 
-# Install runtime dependencies: ffmpeg + Puppeteer/Chrome deps
-# See: https://pptr.dev/troubleshooting#chrome-doesnt-launch-on-linux
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    ca-certificates \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libc6 \
-    libcairo2 \
-    libcups2 \
-    libdbus-1-3 \
-    libexpat1 \
-    libfontconfig1 \
-    libgbm1 \
-    libgcc1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libstdc++6 \
-    libx11-6 \
-    libx11-xcb1 \
-    libxcb1 \
-    libxcomposite1 \
-    libxcursor1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxi6 \
-    libxrandr2 \
-    libxrender1 \
+# Install utilities, ffmpeg, and Google Chrome Stable (for dependencies + fonts)
+# We also add specific font packages to ensure broad Unicode support
+RUN apt-get update \
+    && apt-get install -y wget gnupg ca-certificates ffmpeg \
+    && wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/googlechrome-linux-keyring.gpg \
+    && sh -c 'echo "deb [arch=amd64 signed-by=/usr/share/keyrings/googlechrome-linux-keyring.gpg] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google.list' \
+    && apt-get update \
+    && apt-get install -y google-chrome-stable \
+    fonts-ipafont-gothic \
+    fonts-wqy-zenhei \
+    fonts-thai-tlwg \
+    fonts-kacst \
+    fonts-freefont-ttf \
     libxss1 \
-    libxtst6 \
-    lsb-release \
-    wget \
-    xdg-utils \
+    --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
