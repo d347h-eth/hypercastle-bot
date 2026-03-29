@@ -39,7 +39,7 @@ This document captures the full project context: requirements, behavior, data mo
 -   **429:** read `x-rate-limit-*` headers, set `next_attempt_at` to the reset (with buffer), record remote cooldown, exhaust local usage, and halt until reset.
 -   **Non-429 errors:** exponential backoff (1m → 2m → … → 30m) via `next_attempt_at`, attempt_count++.
 -   **Recovery:** on startup, find `posting` older than `stalePostingSeconds` (120s), compare against recent timeline (tokenId + price + symbol + side) to mark posted or requeue.
--   **Pruning:** delete posted/failed/seen older than 30 days, at most every 6h.
+-   **Pruning:** delete posted/failed/seen older than 30 days, at most every 6h. Historical dedupe is retained separately by `sale_id`, so pruning operational rows does not allow old sales to replay.
 
 ### Rate limiting
 
@@ -53,7 +53,8 @@ This document captures the full project context: requirements, behavior, data mo
 ## Data Model (SQLite)
 
 -   `meta(key, value)` — initialized flag, rate_state_post/me JSON, last_prune_at.
--   `sales` — sale_id (PK), created_at, seen_at, enqueued_at, posting_at, posted_at, status (`seen|queued|fetching_html|capturing_frames|rendering_video|uploading_media|posting|posted|failed`), tweet_id/text, payload (JSON), next_attempt_at, attempt_count, html_path, frames_dir, video_path, media_id, media_uploaded_at, metadata_json, capture_fps. Indexes on status/next_attempt_at/created_at, posted_at.
+-   `sales` — operational queue/history rows: sale_id (PK), created_at, seen_at, enqueued_at, posting_at, posted_at, status (`seen|queued|fetching_html|capturing_frames|rendering_video|uploading_media|posting|posted|failed`), tweet_id/text, payload (JSON), next_attempt_at, attempt_count, html_path, frames_dir, video_path, media_id, media_uploaded_at, metadata_json, capture_fps. Indexes on status/next_attempt_at/created_at, posted_at.
+-   `sale_dedupe` — durable seen-sale memory keyed by `sale_id`; backfilled from `sales` on migration and not pruned with operational rows.
 
 ## Components (Hexagonal)
 

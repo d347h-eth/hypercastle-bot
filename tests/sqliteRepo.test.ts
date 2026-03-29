@@ -192,6 +192,41 @@ describe("SqliteSaleRepository", () => {
         expect(countAfterSecond).toBe(1);
     });
 
+    it("does not re-enqueue a sale after its operational row was pruned", () => {
+        const sale = makeSale("replay");
+        const now = 2_000_000_000;
+
+        repo.enqueueNew([sale], now);
+        repo.markPosted("replay", "tw1", "tweet", now);
+
+        db.raw
+            .prepare(
+                "UPDATE sales SET posted_at=? WHERE sale_id='replay'",
+            )
+            .run(now - 40 * 24 * 3600);
+
+        const cutoff = now - 30 * 24 * 3600;
+        repo.pruneOld(cutoff, now, 1);
+
+        const salesCount = db.raw
+            .prepare("SELECT COUNT(*) as c FROM sales WHERE sale_id='replay'")
+            .get().c as number;
+        expect(salesCount).toBe(0);
+
+        const dedupeCount = db.raw
+            .prepare(
+                "SELECT COUNT(*) as c FROM sale_dedupe WHERE sale_id='replay'",
+            )
+            .get().c as number;
+        expect(dedupeCount).toBe(1);
+
+        const inserted = repo.enqueueNew([sale], now + 60);
+        expect(inserted).toBe(0);
+
+        const claimed = repo.claimNextReady(now + 60);
+        expect(claimed).toBeNull();
+    });
+
     it("respects token cooldown by marking recent sales as seen", () => {
         const sale1 = makeSale("s1");
         sale1.tokenId = "100";

@@ -59,6 +59,10 @@ export class SqliteSaleRepository implements SaleRepository {
 
     seedSeen(sales: Sale[], seenAt: number): void {
         if (!sales.length) return;
+        const remember = db.prepare<[string, string, number, number]>(
+            `INSERT OR IGNORE INTO sale_dedupe (sale_id, token_id, sale_timestamp, first_seen_at)
+             VALUES (?,?,?,?)`,
+        );
         const insert = db.prepare<
             [string, number, number, string, string, string]
         >(
@@ -68,6 +72,14 @@ export class SqliteSaleRepository implements SaleRepository {
         db.exec("BEGIN");
         try {
             for (const sale of sales) {
+                const remembered = remember.run(
+                    sale.id,
+                    sale.tokenId,
+                    sale.timestamp,
+                    seenAt,
+                );
+                if (remembered.changes === 0) continue;
+
                 insert.run(
                     sale.id,
                     sale.timestamp,
@@ -104,6 +116,10 @@ export class SqliteSaleRepository implements SaleRepository {
             recentSet = new Set(recent.map((r) => r.token_id));
         }
 
+        const remember = db.prepare<[string, string, number, number]>(
+            `INSERT OR IGNORE INTO sale_dedupe (sale_id, token_id, sale_timestamp, first_seen_at)
+             VALUES (?,?,?,?)`,
+        );
         const insert = db.prepare<
             [string, number, number, number, number, string, string, string]
         >(
@@ -114,6 +130,14 @@ export class SqliteSaleRepository implements SaleRepository {
         db.exec("BEGIN");
         try {
             for (const sale of sales) {
+                const remembered = remember.run(
+                    sale.id,
+                    sale.tokenId,
+                    sale.timestamp,
+                    seenAt,
+                );
+                if (remembered.changes === 0) continue;
+
                 // If on cooldown, skip queue (mark as seen), otherwise queue
                 const isOnCooldown = recentSet.has(sale.tokenId);
                 const status = isOnCooldown ? "seen" : "queued";
