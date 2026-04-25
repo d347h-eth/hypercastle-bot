@@ -119,14 +119,14 @@ export class BotService {
                 this.deps.config.tokenCooldownHours,
             );
             if (newCount > 0) {
-                logger.info("Fetched recent sales (Reservoir)", {
+                logger.info("Fetched recent sales", {
                     component: "BotService",
                     action: "pollOnce",
                     fetched: feed.length,
                     enqueued: newCount,
                 });
             } else {
-                logger.info("Fetched recent sales (Reservoir)", {
+                logger.info("Fetched recent sales", {
                     component: "BotService",
                     action: "pollOnce",
                     fetched: feed.length,

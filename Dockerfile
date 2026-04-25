@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM node:24 AS base
+FROM node:24.3.0 AS base
 
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/app/.cache
@@ -33,7 +33,7 @@ COPY migrations ./migrations
 RUN yarn build
 
 # Runtime image (Standard Node/Debian image for max compatibility)
-FROM node:24 AS runtime
+FROM node:24.3.0 AS runtime
 ENV NODE_ENV=production
 
 # Configure Puppeteer to use local cache

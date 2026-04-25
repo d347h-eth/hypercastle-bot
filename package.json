@@ -12,6 +12,9 @@
         "dev": "tsx watch src/index.ts",
         "build": "tsc -p tsconfig.build.json",
         "start": "node dist/index.js",
+        "delete:tweet": "tsx scripts/delete-tweet.ts",
+        "repost:token": "tsx scripts/repost-token.ts",
+        "render:token": "tsx scripts/test-render.ts",
         "format": "prettier . --write",
         "format:check": "prettier . --check",
         "test": "vitest run"

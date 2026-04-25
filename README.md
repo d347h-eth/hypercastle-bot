@@ -19,7 +19,7 @@ Highlights:
 
 ```sh
 docker build -t terraforms-bot .
-docker run --rm -it \
+docker run -d \
   --name terraforms-bot \
   -v $(pwd)/data:/data \
   --env-file .env \

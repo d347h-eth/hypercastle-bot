@@ -11,6 +11,7 @@ node_modules
 
 # Build
 dist
+*.tsbuildinfo
 
 # Env
 .env
@@ -26,3 +27,5 @@ logs/
 tmp/
 
 coverage/
+
+.codex
