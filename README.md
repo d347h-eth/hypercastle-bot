@@ -34,6 +34,64 @@ The bot will use `/data` for:
 
 The bot will create `/data/bot.sqlite.db` and start polling.
 
+## Docker Script Commands
+
+The Docker image is also the preferred environment for manual scripts because it contains the same pinned Node/Yarn toolchain, Puppeteer setup, Google Chrome, fonts, ffmpeg, migrations, and `scripts/` files used by production.
+
+Build the image first:
+
+```sh
+docker build -t terraforms-bot .
+```
+
+If the bot container is already running, execute package scripts inside it:
+
+```sh
+# Re-render and repost the latest posted sale for a token.
+docker exec -it terraforms-bot yarn repost:token <tokenId>
+
+# Re-render and repost a specific sale, while cross-checking tokenId.
+docker exec -it terraforms-bot yarn repost:token <tokenId> --sale-id <saleId>
+
+# Dry-run repost through FakeSocialPublisher. This still renders/uploads locally,
+# but does not call X to create a post.
+docker exec -it terraforms-bot yarn repost:token <tokenId> --fake
+
+# Delete an X post owned by the authenticated account.
+# This does not modify local SQLite rows.
+docker exec -it terraforms-bot yarn delete:tweet <tweetId>
+
+# Render a token video without posting.
+docker exec -it terraforms-bot yarn render:token <tokenId>
+```
+
+If the bot container is not running, run the same commands as one-off containers. Mount the same `data/` directory so SQLite state and artifacts are shared with normal bot runs:
+
+```sh
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn repost:token <tokenId>
+
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn delete:tweet <tweetId>
+
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn render:token <tokenId>
+```
+
+For a bad video repost, delete the old X post first, then run `repost:token`. The repost script inserts a separate `manual-repost-*` row and keeps the original sale record intact.
+
 ## Configuration
 
 Environment variables are documented in `.env.example`.
