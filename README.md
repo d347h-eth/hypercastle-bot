@@ -44,7 +44,95 @@ Build the image first:
 docker build -t terraforms-bot .
 ```
 
-If the bot container is already running, execute package scripts inside it:
+If the bot container is already running, execute package scripts inside it. Paths passed to scripts must exist inside the container, so prefer `/data/...` for generated artifacts because the normal run command mounts host `./data` there.
+
+### Parcel Fetching
+
+`fetch:parcel` is the in-repo replacement for the old `scripts/getparcel` helper. It supports the same core controls: `--method tokenHTML|tokenSVG`, `--version`, `--seed`, `--decay`, `--status`, `--canvas`, `--output`, `--dry-run`, `--show-canvas`, and `--rpc-url`.
+
+```sh
+# Resolve current on-chain inputs without rendering.
+docker exec -it terraforms-bot yarn fetch:parcel <tokenId> --dry-run
+
+# Fetch a specific renderer/status/canvas to a mounted artifact path.
+docker exec -it terraforms-bot yarn fetch:parcel <tokenId> \
+  --version 2 \
+  --status terraformed \
+  --canvas "<decimal-canvas>" \
+  --output /data/artifacts/manual/token-<tokenId>.html
+
+# Fetch SVG instead of HTML.
+docker exec -it terraforms-bot yarn fetch:parcel <tokenId> \
+  --method tokenSVG \
+  --output /data/artifacts/manual/token-<tokenId>.svg
+```
+
+### HTML Capture
+
+`capture:html` is the in-repo replacement for the old `scripts/video_capture` helper. It captures a local container-visible HTML/SVG file to MP4 and supports `--mode streaming|buffered`, `--fps`, `--duration`, `--width`, `--height`, `--image-type png|jpeg`, and `--jpeg-quality`.
+
+```sh
+docker exec -it terraforms-bot yarn capture:html /data/artifacts/manual/token-<tokenId>.html \
+  --fps 40 \
+  --duration 15 \
+  --output-dir /data/artifacts/manual/capture-<tokenId>
+```
+
+### Token Video Render
+
+`render:token` combines parcel fetch + frame capture + ffmpeg render without posting to X. Defaults mirror the bot media path: renderer `--version 2` and calculated terrain canvas for Daydream statuses. Use `--live-version` and `--no-force-terrain-for-daydream` if you want raw `getparcel`-style behavior instead.
+
+```sh
+docker exec -it terraforms-bot yarn render:token <tokenId>
+
+docker exec -it terraforms-bot yarn render:token <tokenId> \
+  --status daydream \
+  --fps 90 \
+  --duration 60 \
+  --output-dir /data/artifacts/manual-render-<tokenId> \
+  --overwrite
+```
+
+### Host-Owned Manual Artifacts
+
+Manual scripts write into the host `./data` bind mount through `/data`. By default the container runs as root, so generated files may be root-owned on the host. For manual artifact commands, run the command as your host UID/GID and set `HOME=/tmp` so Yarn/Puppeteer do not try to write under `/root`.
+
+```sh
+mkdir -p ./data/artifacts/manual/capture-<tokenId>
+
+docker exec -it \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  terraforms-bot \
+  yarn capture:html /data/artifacts/manual/token-<tokenId>.html \
+    --fps 40 \
+    --duration 15 \
+    --output-dir /data/artifacts/manual/capture-<tokenId>
+```
+
+The same ownership pattern works for one-off containers:
+
+```sh
+docker run --rm -it \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/tmp \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn capture:html /data/artifacts/manual/token-<tokenId>.html \
+    --fps 40 \
+    --duration 15 \
+    --output-dir /data/artifacts/manual/capture-<tokenId>
+```
+
+If a directory already contains root-owned files from earlier runs, fix it once on the host:
+
+```sh
+sudo chown -R "$(id -u):$(id -g)" ./data/artifacts/manual/capture-<tokenId>
+```
+
+### X Operations
 
 ```sh
 # Re-render and repost the latest posted sale for a token.
@@ -60,9 +148,6 @@ docker exec -it terraforms-bot yarn repost:token <tokenId> --fake
 # Delete an X post owned by the authenticated account.
 # This does not modify local SQLite rows.
 docker exec -it terraforms-bot yarn delete:tweet <tweetId>
-
-# Render a token video without posting.
-docker exec -it terraforms-bot yarn render:token <tokenId>
 ```
 
 If the bot container is not running, run the same commands as one-off containers. Mount the same `data/` directory so SQLite state and artifacts are shared with normal bot runs:
@@ -88,6 +173,20 @@ docker run --rm -it \
   -e DATA_DIR=/data \
   terraforms-bot \
   yarn render:token <tokenId>
+
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn fetch:parcel <tokenId> --dry-run
+
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn capture:html /data/artifacts/manual/token-<tokenId>.html
 ```
 
 For a bad video repost, delete the old X post first, then run `repost:token`. The repost script inserts a separate `manual-repost-*` row and keeps the original sale record intact.

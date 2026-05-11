@@ -6,7 +6,6 @@ import {
     concatHex,
     createPublicClient,
     getAddress,
-    hexToBigInt,
     http,
     keccak256,
     maxUint256,
@@ -16,19 +15,57 @@ import {
 
 const DEFAULT_RPC_URL =
     process.env.ETH_RPC_URL ?? "https://ethereum-rpc.publicnode.com";
-const TERRAFORMS_ADDRESS =
+export const TERRAFORMS_ADDRESS =
     "0x4e1f41613c9084fdb9e34e11fae9412427480e56" as const;
 const TOKEN_TO_URI_SLOT = 11128n; // tokenToURIAddressIndex mapping slot on the proxy
 const CANVAS_ROW_COUNT = 16;
 const DEFAULT_SEED = 10196n;
 const DEFAULT_DECAY = 0n;
 
-type StatusKey =
+export type ParcelRenderMethod = "tokenHTML" | "tokenSVG";
+
+export type StatusKey =
     | "terrain"
     | "daydream"
     | "terraformed"
     | "originDaydream"
     | "originTerraformed";
+
+export type ParcelStatusResolution = {
+    value: bigint;
+    label: string;
+    slug: string;
+    source: "override" | "live";
+};
+
+export type ParcelVersionResolution = {
+    value: bigint;
+    source: "override" | "live";
+};
+
+export type ParcelCanvasSource =
+    | "override"
+    | "live"
+    | "zeroed"
+    | "calculated-terrain";
+
+export type ParcelCanvasResolution = {
+    rows: bigint[];
+    source: ParcelCanvasSource;
+};
+
+export interface ParcelRenderInput {
+    rpcUrl: string;
+    tokenId: bigint;
+    method: ParcelRenderMethod;
+    version: ParcelVersionResolution;
+    rendererAddress: Address;
+    placement: bigint;
+    status: ParcelStatusResolution;
+    canvas: ParcelCanvasResolution;
+    seed: bigint;
+    decay: bigint;
+}
 
 const STATUS_CONFIG: Record<
     StatusKey,
@@ -82,6 +119,20 @@ const STATUS_BY_VALUE: Record<string, StatusKey> = Object.entries(
     {} as Record<string, StatusKey>,
 );
 
+const STATUS_ALIAS_LOOKUP: Record<string, StatusKey> = Object.entries(
+    STATUS_CONFIG,
+).reduce(
+    (acc, [key, meta]) => {
+        meta.aliases.forEach((alias) => {
+            acc[normalizeStatusInput(alias)] = key as StatusKey;
+        });
+        return acc;
+    },
+    {} as Record<string, StatusKey>,
+);
+
+export const PARCEL_STATUS_KEYS = Object.keys(STATUS_CONFIG) as StatusKey[];
+
 const terraformsAbi = [
     {
         name: "tokenURIAddresses",
@@ -131,6 +182,19 @@ const rendererAbi = [
         outputs: [{ type: "string" }],
     },
     {
+        name: "tokenSVG",
+        type: "function",
+        stateMutability: "view",
+        inputs: [
+            { type: "uint256", name: "status" },
+            { type: "uint256", name: "placement" },
+            { type: "uint256", name: "seed" },
+            { type: "uint256", name: "decay" },
+            { type: "uint256[]", name: "canvas" },
+        ],
+        outputs: [{ type: "string" }],
+    },
+    {
         name: "tokenHeightmapIndices",
         type: "function",
         stateMutability: "view",
@@ -147,33 +211,55 @@ const rendererAbi = [
 
 export interface ParcelFetchOptions {
     rpcUrl?: string;
+    method?: ParcelRenderMethod;
     version?: bigint | number | string;
     seed?: bigint;
     decay?: bigint;
     statusOverride?: StatusKey;
     canvasOverride?: bigint[] | string;
     outputDir?: string;
+    outputPath?: string;
     forceTerrainForDaydream?: boolean;
 }
 
 export async function fetchParcelHtml(
     tokenId: number | string,
     opts: ParcelFetchOptions = {},
-): Promise<{ html: string; filePath: string }> {
+): Promise<{ html: string; filePath: string; input: ParcelRenderInput }> {
+    const input = await resolveParcelRenderInput(tokenId, opts);
+    const html = await renderParcelContent(input);
+
+    const outPath =
+        opts.outputPath ??
+        path.join(
+            opts.outputDir ?? path.join("data", "artifacts", String(tokenId)),
+            `token-${tokenId}.${input.method === "tokenSVG" ? "svg" : "html"}`,
+        );
+    await mkdir(path.dirname(outPath), { recursive: true });
+    await writeFile(outPath, html, "utf8");
+    return { html, filePath: outPath, input };
+}
+
+export async function resolveParcelRenderInput(
+    tokenId: number | string | bigint,
+    opts: ParcelFetchOptions = {},
+): Promise<ParcelRenderInput> {
     const rpcUrl = opts.rpcUrl ?? DEFAULT_RPC_URL;
     const client = createPublicClient({ transport: http(rpcUrl) });
     const tid = BigInt(tokenId);
+    const method = opts.method ?? "tokenHTML";
 
     const version = await resolveVersion(client, tid, opts.version);
     const rendererAddress = await resolveDataAddress(client, version.value);
     const placement = await resolvePlacement(client, tid);
     let status = await resolveStatus(client, tid, opts.statusOverride);
 
-    let canvas: { rows: bigint[]; source: string };
+    let canvas: ParcelCanvasResolution;
 
     // Special handling for Daydream/OriginDaydream without explicit canvas override
     const isDaydream =
-        status.slug === "daydream" || status.slug === "originDaydream";
+        status.value === STATUS_CONFIG.daydream.value ||
+        status.value === STATUS_CONFIG.originDaydream.value;
     if (isDaydream && !opts.canvasOverride && opts.forceTerrainForDaydream) {
         canvas = await resolveCalculatedTerrainCanvas(
             client,
@@ -189,7 +275,7 @@ export async function fetchParcelHtml(
         // Daydream -> Terraformed (2)
         // OriginDaydream -> OriginTerraformed (4)
         const targetStatus =
-            status.slug === "daydream"
+            status.value === STATUS_CONFIG.daydream.value
                 ? STATUS_CONFIG.terraformed.value
                 : STATUS_CONFIG.originTerraformed.value;
 
@@ -199,20 +285,48 @@ export async function fetchParcelHtml(
         canvas = await resolveCanvas(client, tid, status, opts.canvasOverride);
     }
 
-    const html = await renderParcel(client, rendererAddress, {
-        status: status.value,
+    return {
+        rpcUrl,
+        tokenId: tid,
+        method,
+        version,
+        rendererAddress,
         placement,
+        status,
+        canvas,
         seed: opts.seed ?? DEFAULT_SEED,
         decay: opts.decay ?? DEFAULT_DECAY,
-        canvas: canvas.rows,
-    });
+    };
+}
 
-    const outDir =
-        opts.outputDir ?? path.join("data", "artifacts", String(tokenId));
-    await mkdir(outDir, { recursive: true });
-    const outPath = path.join(outDir, `token-${tokenId}.html`);
-    await writeFile(outPath, html, "utf8");
-    return { html, filePath: outPath };
+export async function renderParcelContent(
+    input: ParcelRenderInput,
+): Promise<string> {
+    const client = createPublicClient({ transport: http(input.rpcUrl) });
+    return renderParcel(client, input.rendererAddress, input.method, {
+        status: input.status.value,
+        placement: input.placement,
+        seed: input.seed,
+        decay: input.decay,
+        canvas: input.canvas.rows,
+    });
+}
+
+export function parseParcelStatusKey(input: string): StatusKey {
+    const key = STATUS_ALIAS_LOOKUP[normalizeStatusInput(input)];
+    if (!key) {
+        throw new Error(
+            `Unknown status "${input}". Use one of: ${PARCEL_STATUS_KEYS.join(", ")}`,
+        );
+    }
+    return key;
+}
+
+export function formatCanvasPreview(rows: bigint[], limit = 4): string {
+    return rows
+        .slice(0, limit)
+        .map((row) => row.toString())
+        .join(", ");
 }
 
 async function resolveCalculatedTerrainCanvas(
@@ -222,7 +336,7 @@ async function resolveCalculatedTerrainCanvas(
     placement: bigint,
     seed: bigint,
     decay: bigint,
-): Promise<{ rows: bigint[]; source: string }> {
+): Promise<ParcelCanvasResolution> {
     // 1. Get zeroed canvas (simulate terrain status)
     const zeroCanvas = await resolveCanvas(client, tokenId, {
         value: STATUS_CONFIG.terrain.value,
@@ -259,7 +373,7 @@ async function resolveVersion(
     client: PublicClient,
     tokenId: bigint,
     override?: bigint | number | string,
-): Promise<{ value: bigint; source: "override" | "live" }> {
+): Promise<ParcelVersionResolution> {
     if (override !== undefined) {
         const v = typeof override === "bigint" ? override : BigInt(override);
         return { value: v, source: "override" };
@@ -308,12 +422,7 @@ async function resolveStatus(
     client: PublicClient,
     tokenId: bigint,
     override?: StatusKey,
-): Promise<{
-    value: bigint;
-    label: string;
-    slug: string;
-    source: "override" | "live";
-}> {
+): Promise<ParcelStatusResolution> {
     if (override) {
         const meta = STATUS_CONFIG[override];
         return {
@@ -337,7 +446,7 @@ async function resolveCanvas(
     tokenId: bigint,
     status: { value: bigint },
     override?: bigint[] | string,
-): Promise<{ rows: bigint[]; source: "override" | "live" | "zeroed" }> {
+): Promise<ParcelCanvasResolution> {
     if (override) {
         const rows = Array.isArray(override)
             ? override
@@ -369,6 +478,7 @@ async function resolveCanvas(
 async function renderParcel(
     client: PublicClient,
     rendererAddress: Address,
+    method: ParcelRenderMethod,
     args: {
         status: bigint;
         placement: bigint;
@@ -380,7 +490,7 @@ async function renderParcel(
     const result = await client.readContract({
         address: rendererAddress,
         abi: rendererAbi,
-        functionName: "tokenHTML",
+        functionName: method,
         args: [args.status, args.placement, args.seed, args.decay, args.canvas],
     });
     if (typeof result !== "string") {
@@ -406,6 +516,13 @@ function statusFromChain(value: bigint): {
     }
     const meta = STATUS_CONFIG[key];
     return { value, label: meta.label, slug: meta.slug, source: "live" };
+}
+
+function normalizeStatusInput(value: string): string {
+    return value
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, "");
 }
 
 function normalizeCanvas(rows: bigint[]): bigint[] {
