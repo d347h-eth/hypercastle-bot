@@ -78,6 +78,25 @@ docker exec -it terraforms-bot yarn capture:html /data/artifacts/manual/token-<t
   --output-dir /data/artifacts/manual/capture-<tokenId>
 ```
 
+### HTML Dissection
+
+`dissect:html` splits a generated Terraforms HTML/SVG artwork into persisted artifacts and writes a runtime report explaining token constants, grid state, charset selection, `uni` / `String.fromCharCode()` ranges, embedded font coverage, and the active animation branch.
+
+```sh
+docker exec -it terraforms-bot yarn dissect:html /data/artifacts/manual/token-<tokenId>.html \
+  --output-dir /data/artifacts/manual/token-<tokenId>-dissect
+```
+
+The output directory includes:
+
+-   `report.md` — human-readable dissection report
+-   `summary.json` — extraction summary
+-   `runtime-charsets.json` — structured charset and animation derivation
+-   `uni-fromcharcode-map.tsv` — each `uni` entry mapped to the actual `fromCharCode()` output range
+-   `font-coverage.tsv` — runtime character to embedded-font/fallback mapping
+-   `script-*.decoded.js` and `script-*.decoded.readable-no-font.js` — entity-decoded JS
+-   `style-*.css`, extracted fonts, and initial grid dumps
+
 ### Token Video Render
 
 `render:token` combines parcel fetch + frame capture + ffmpeg render without posting to X. Defaults mirror the bot media path: renderer `--version 2` and calculated terrain canvas for Daydream statuses. Use `--live-version` and `--no-force-terrain-for-daydream` if you want raw `getparcel`-style behavior instead.
@@ -187,6 +206,14 @@ docker run --rm -it \
   -e DATA_DIR=/data \
   terraforms-bot \
   yarn capture:html /data/artifacts/manual/token-<tokenId>.html
+
+docker run --rm -it \
+  -v "$(pwd)/data:/data" \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  terraforms-bot \
+  yarn dissect:html /data/artifacts/manual/token-<tokenId>.html \
+    --output-dir /data/artifacts/manual/token-<tokenId>-dissect
 ```
 
 For a bad video repost, delete the old X post first, then run `repost:token`. The repost script inserts a separate `manual-repost-*` row and keeps the original sale record intact.

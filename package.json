@@ -14,6 +14,7 @@
         "start": "node dist/index.js",
         "capture:html": "tsx scripts/capture-html.ts",
         "delete:tweet": "tsx scripts/delete-tweet.ts",
+        "dissect:html": "tsx scripts/dissect-html.ts",
         "fetch:parcel": "tsx scripts/fetch-parcel.ts",
         "repost:token": "tsx scripts/repost-token.ts",
         "render:token": "tsx scripts/render-token.ts",
